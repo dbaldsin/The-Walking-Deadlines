@@ -1,0 +1,49 @@
+---
+
+title: Learning Recap
+description: Review what OpenCode changed and learn from completed coding tasks.
+--------------------------------------------------------------------------------
+
+A Learning Recap gives you a short summary after OpenCode completes a coding task. It helps you understand what changed during the task instead of only seeing the final result.
+
+The recap highlights the files that were changed, important implementation decisions, and the tests that were run.
+
+---
+
+## What is included
+
+A Learning Recap can include:
+
+* **Files changed** — the files OpenCode modified while completing the task.
+* **Key decisions** — a short explanation of important implementation choices.
+* **Tests** — the tests that were run and their results.
+
+This makes it easier to review the completed work and understand how the solution was implemented.
+
+---
+
+## Example
+
+After completing a coding task, you might see a recap like this:
+
+```text
+Learning Recap
+
+Files changed
+- src/calculator.ts — Added input validation.
+- test/calculator.test.ts — Added tests for invalid input.
+
+Key decisions
+- Reused the existing validation helper instead of creating a second validation function.
+
+Tests
+- bun test calculator.test.ts — Passed
+```
+
+In this example, the recap shows which files were changed, explains an important implementation decision, and reports the result of the test that was run.
+
+---
+
+## Using the recap
+
+Review the Learning Recap after a coding task is completed. You can use it to understand the implementation, inspect the relevant files, and see whether the changes were tested successfully.
