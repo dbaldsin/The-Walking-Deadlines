@@ -182,7 +182,9 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
         if (diff.length > 0) break
         yield* Effect.sleep("100 millis")
       }
-      expect(diff.length).toBeGreaterThan(0)
+      expect(diff).toEqual([
+        expect.objectContaining({ file: "race-test.txt", status: "added" }),
+      ])
     }),
     { git: true, config: providerCfg },
   ),
