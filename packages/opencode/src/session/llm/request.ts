@@ -17,6 +17,14 @@ import { mergeDeep } from "remeda"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
+const ERROR_EXPLANATION_PROMPT = [
+  "When a command, test, build, or other tool result fails:",
+  "- Before making code or file changes to fix it, explain the error in clear, student-friendly language.",
+  "- State the most likely cause based on the observed error.",
+  "- Keep the explanation concise and based only on visible evidence.",
+  "- Only include this explanation when an error occurs. Successful tasks should continue normally.",
+].join("\n")
+
 type PrepareInput = {
   readonly user: SessionV1.User
   readonly sessionID: string
@@ -60,6 +68,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
       ...input.system,
       ...(input.user.system ? [input.user.system] : []),
+      ERROR_EXPLANATION_PROMPT,
     ]
       .filter((x) => x)
       .join("\n"),
