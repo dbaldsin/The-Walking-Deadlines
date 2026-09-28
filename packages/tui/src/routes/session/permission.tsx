@@ -131,6 +131,16 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
     return {}
   })
 
+  // Plain-language summary computed server-side by the tool (see opencode `Translator`).
+  const explanation = createMemo(() => {
+    const value = props.request.metadata?.explanation
+    if (!value || typeof value !== "object") return undefined
+    const what = "what" in value && typeof value.what === "string" ? value.what : undefined
+    const why = "why" in value && typeof value.why === "string" ? value.why : undefined
+    if (!what && !why) return undefined
+    return { what, why }
+  })
+
   const { theme } = useTheme()
 
   return (
@@ -394,6 +404,22 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                 </text>
                 <text fg={theme.text}>{current.title}</text>
               </box>
+              <Show when={explanation()?.what}>
+                <box paddingLeft={4} flexShrink={0}>
+                  <text fg={theme.text} wrapMode="word">
+                    <span style={{ fg: theme.textMuted }}>What: </span>
+                    {explanation()?.what}
+                  </text>
+                </box>
+              </Show>
+              <Show when={explanation()?.why}>
+                <box paddingLeft={4} flexShrink={0}>
+                  <text fg={theme.text} wrapMode="word">
+                    <span style={{ fg: theme.textMuted }}>Why: </span>
+                    {explanation()?.why}
+                  </text>
+                </box>
+              </Show>
             </box>
           )
 

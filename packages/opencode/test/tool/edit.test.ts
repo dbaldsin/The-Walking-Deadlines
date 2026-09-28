@@ -155,6 +155,25 @@ describe("tool.edit", () => {
       }),
     )
 
+    it.instance("explains the edit in the permission request", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "existing.txt")
+        yield* put(filepath, "old content here")
+        const requests: Array<{ metadata: Record<string, unknown> }> = []
+
+        yield* run(
+          { filePath: filepath, oldString: "old content", newString: "new content", reason: "Fix the wording" },
+          { ...ctx, ask: (req) => Effect.sync(() => void requests.push(req)) },
+        )
+
+        expect(requests[0].metadata.explanation).toEqual({
+          what: expect.stringMatching(/^Edits .*existing\.txt \(adds 1 line, removes 1 line\)$/),
+          why: "Fix the wording",
+        })
+      }),
+    )
+
     it.instance("replaces the first visible line in BOM files", () =>
       Effect.gen(function* () {
         const test = yield* TestInstance

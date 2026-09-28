@@ -21,6 +21,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { Translator } from "@/translator"
 
 export { Parameters } from "./shell/prompt"
 
@@ -260,7 +261,7 @@ const parse = Effect.fn("ShellTool.parse")(function* (command: string, ps: boole
   return tree
 })
 
-const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan, input: { command: string }) {
+const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan, input: { command: string; reason?: string }) {
   if (scan.dirs.size > 0) {
     const directories = Array.from(scan.dirs)
     const globs = directories.map((dir) => {
@@ -275,6 +276,7 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
         command: input.command,
         directories,
         patterns: globs,
+        explanation: Translator.shell(input.command, input.reason),
       },
     })
   }
@@ -286,6 +288,7 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
     always: Array.from(scan.always),
     metadata: {
       command: input.command,
+      explanation: Translator.shell(input.command, input.reason),
     },
   })
 })
