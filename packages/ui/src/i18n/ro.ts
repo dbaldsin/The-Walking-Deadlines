@@ -175,6 +175,8 @@ export const dict: Record<string, string> = {
   "ui.permission.deny": "Refuză",
   "ui.permission.allowAlways": "Permite mereu",
   "ui.permission.allowOnce": "Permite o dată",
+  "ui.permission.explain.what": "Ce face aceasta:",
+  "ui.permission.explain.why": "De ce:",
   "ui.message.expand": "Extinde mesajul",
   "ui.message.collapse": "Restrânge mesajul",
   "ui.message.copy": "Copiază",

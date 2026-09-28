@@ -153,6 +153,8 @@ export const dict: Record<string, string> = {
   "ui.permission.deny": "Kiellä",
   "ui.permission.allowAlways": "Salli aina",
   "ui.permission.allowOnce": "Salli kerran",
+  "ui.permission.explain.what": "Mitä tämä tekee:",
+  "ui.permission.explain.why": "Miksi:",
   "ui.message.expand": "Laajenna viesti",
   "ui.message.collapse": "Kutista viesti",
   "ui.message.copy": "Kopioi",
