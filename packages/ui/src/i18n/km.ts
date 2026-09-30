@@ -172,6 +172,8 @@ export const dict = {
   "ui.permission.deny": "បដិសេធ",
   "ui.permission.allowAlways": "អនុញ្ញាតជានិច្ច",
   "ui.permission.allowOnce": "អនុញ្ញាតម្តង",
+  "ui.permission.explain.what": "អ្វីដែលវាធ្វើ៖",
+  "ui.permission.explain.why": "ហេតុអ្វី៖",
   "ui.message.expand": "ពង្រីកសារ",
   "ui.message.collapse": "បង្រួមសារ",
   "ui.message.copy": "ចម្លង",

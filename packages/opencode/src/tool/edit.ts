@@ -18,6 +18,7 @@ import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Bom from "@/util/bom"
+import { Translator } from "@/translator"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -52,6 +53,10 @@ export const Parameters = Schema.Struct({
   }),
   replaceAll: Schema.optional(Schema.Boolean).annotate({
     description: "Replace all occurrences of oldString (default false)",
+  }),
+  reason: Schema.optional(Schema.String).annotate({
+    description:
+      "One short sentence, in plain language a beginner programmer understands, explaining why this action is needed. Shown to the user when asking for permission.",
   }),
 })
 
@@ -106,6 +111,12 @@ export const EditTool = Tool.define(
                   metadata: {
                     filepath: filePath,
                     diff,
+                    explanation: Translator.write(
+                      path.relative(instance.worktree, filePath),
+                      false,
+                      diff,
+                      params.reason,
+                    ),
                   },
                 })
                 yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
@@ -149,6 +160,7 @@ export const EditTool = Tool.define(
                 metadata: {
                   filepath: filePath,
                   diff,
+                  explanation: Translator.edit(path.relative(instance.worktree, filePath), diff, params.reason),
                 },
               })
 

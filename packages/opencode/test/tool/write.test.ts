@@ -170,6 +170,22 @@ describe("tool.write", () => {
         expect(result.metadata).toHaveProperty("exists", true)
       }),
     )
+
+    it.instance("explains the write in the permission request", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const requests: Array<{ metadata: Record<string, unknown> }> = []
+        yield* run(
+          { filePath: path.join(test.directory, "notes.txt"), content: "one\ntwo\n", reason: "Save the notes" },
+          { ...ctx, ask: (req) => Effect.sync(() => void requests.push(req)) },
+        )
+
+        expect(requests[0].metadata.explanation).toEqual({
+          what: expect.stringMatching(/^Creates the new file .*notes\.txt \(2 lines\)$/),
+          why: "Save the notes",
+        })
+      }),
+    )
   })
 
   describe("file permissions", () => {

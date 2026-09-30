@@ -180,6 +180,8 @@ export const dict: Record<string, string> = {
   "ui.permission.deny": "Zavrni",
   "ui.permission.allowAlways": "Dovoli vedno",
   "ui.permission.allowOnce": "Dovolite enkrat",
+  "ui.permission.explain.what": "Kaj to naredi:",
+  "ui.permission.explain.why": "Zakaj:",
   "ui.message.expand": "Razširi sporočilo",
   "ui.message.collapse": "Strni sporočilo",
   "ui.message.copy": "Kopiraj",

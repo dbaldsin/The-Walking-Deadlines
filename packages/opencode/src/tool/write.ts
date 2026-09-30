@@ -14,6 +14,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
+import { Translator } from "@/translator"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
@@ -21,6 +22,10 @@ export const Parameters = Schema.Struct({
   content: Schema.String.annotate({ description: "The content to write to the file" }),
   filePath: Schema.String.annotate({
     description: "The absolute path to the file to write (must be absolute, not relative)",
+  }),
+  reason: Schema.optional(Schema.String).annotate({
+    description:
+      "One short sentence, in plain language a beginner programmer understands, explaining why this action is needed. Shown to the user when asking for permission.",
   }),
 })
 
@@ -35,7 +40,7 @@ export const WriteTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (params: { content: string; filePath: string }, ctx: Tool.Context) =>
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const instance = yield* InstanceState.context
           const filepath = path.isAbsolute(params.filePath)
@@ -58,6 +63,7 @@ export const WriteTool = Tool.define(
             metadata: {
               filepath,
               diff,
+              explanation: Translator.write(path.relative(instance.worktree, filepath), exists, diff, params.reason),
             },
           })
 

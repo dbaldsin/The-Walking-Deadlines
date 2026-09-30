@@ -172,6 +172,8 @@ export const dict: Record<string, string> = {
   "ui.permission.deny": "منع کرو",
   "ui.permission.allowAlways": "ہمیشہ اجازت دیو",
   "ui.permission.allowOnce": "اک واری اجازت دیو",
+  "ui.permission.explain.what": "ਇਹ ਕੀ ਕਰਦਾ ਹੈ:",
+  "ui.permission.explain.why": "ਕਿਉਂ:",
   "ui.message.expand": "سنیہا ودھاؤ",
   "ui.message.collapse": "سنیہا سمیٹو",
   "ui.message.copy": "کاپی کرو",

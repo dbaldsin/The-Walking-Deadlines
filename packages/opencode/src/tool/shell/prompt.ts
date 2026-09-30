@@ -19,6 +19,10 @@ export function parameterSchema() {
     workdir: Schema.optional(Schema.String).annotate({
       description: `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     }),
+    reason: Schema.optional(Schema.String).annotate({
+      description:
+        "One short sentence, in plain language a beginner programmer understands, explaining why this action is needed. Shown to the user when asking for permission.",
+    }),
   })
 }
 

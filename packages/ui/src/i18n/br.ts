@@ -182,6 +182,8 @@ export const dict = {
   "ui.permission.deny": "Negar",
   "ui.permission.allowAlways": "Permitir sempre",
   "ui.permission.allowOnce": "Permitir uma vez",
+  "ui.permission.explain.what": "O que isto faz:",
+  "ui.permission.explain.why": "Por quê:",
 
   "ui.message.expand": "Expandir mensagem",
   "ui.message.collapse": "Recolher mensagem",
