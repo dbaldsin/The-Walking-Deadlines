@@ -50,3 +50,5 @@ export function format(tests: ReadonlyArray<TestResult> | undefined) {
   if (!tests || tests.length === 0) return ["No tests were run during this task."]
   return tests.map((test) => `${test.command}: ${test.status}${test.summary ? ` (${test.summary})` : ""}`)
 }
+
+export * as LearningRecapTests from "./learning-recap-tests"
