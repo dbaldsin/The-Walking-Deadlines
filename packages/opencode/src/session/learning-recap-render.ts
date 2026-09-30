@@ -14,18 +14,22 @@ type Part = {
  * Builds the recap for one completed task from its message parts and the task's
  * file diffs. A section stays absent, never an empty placeholder, when its data
  * source has nothing to add yet (key decisions lands in a later issue) -- see #7
- * for why the schema keeps every field optional.
+ * for why the schema keeps every field optional. Returns an empty recap when the
+ * task changed nothing and ran no tests, so a routine read-only tool call (a
+ * plain `ls`, a permission-denied command, an aborted step) gets no "No files
+ * changed / No tests were run" boilerplate -- only a task that actually did
+ * something gets a recap, per #11's "existing behavior still works" criterion.
  */
-export function fromParts(parts: ReadonlyArray<Part>, changedFiles: ReadonlyArray<FileDiff.Info>): LearningRecap.Info {
+export function fromParts(parts: ReadonlyArray<Part>, changedFilesInput: ReadonlyArray<FileDiff.Info>): LearningRecap.Info {
   const shellCalls = parts.flatMap((part) => {
     if (part.type !== "tool" || part.tool !== ShellID.ToolID || part.state?.status !== "completed") return []
     const exit = part.state.metadata?.exit
     return [{ command: part.state.title ?? "", exit: typeof exit === "number" ? exit : null, output: part.state.output }]
   })
-  return {
-    tests: LearningRecapTests.collect(shellCalls),
-    changedFiles: LearningRecapFiles.collect(changedFiles),
-  }
+  const tests = LearningRecapTests.collect(shellCalls)
+  const changedFiles = LearningRecapFiles.collect(changedFilesInput)
+  if (!tests.length && !changedFiles.length) return {}
+  return { tests, changedFiles }
 }
 
 const HEADING = "## Learning Recap"

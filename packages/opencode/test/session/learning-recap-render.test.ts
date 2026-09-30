@@ -18,19 +18,28 @@ describe("LearningRecapRender.fromParts", () => {
     expect(() => Schema.decodeUnknownSync(LearningRecap.Info)(info)).not.toThrow()
   })
 
-  test("ignores non-bash tools, non-test commands, and calls that are not completed", () => {
+  test("ignores non-bash tools and calls that are not completed", () => {
     const parts = [
       { type: "tool", tool: "read", state: { status: "completed", title: "read package.json", metadata: {}, output: "{}" } },
-      { type: "tool", tool: "bash", state: { status: "completed", title: "ls -la", metadata: { exit: 0 }, output: "" } },
       { type: "tool", tool: "bash", state: { status: "running", title: "bun test", metadata: {}, output: "" } },
       { type: "text", state: { status: "completed" } },
     ]
-    expect(LearningRecapRender.fromParts(parts, []).tests).toEqual([])
+    expect(LearningRecapRender.fromParts(parts, [])).toEqual({})
   })
 
-  test("still reports tests when the turn ran shell commands but none were tests", () => {
-    const parts = [{ type: "tool", tool: "bash", state: { status: "completed", title: "ls", metadata: { exit: 0 }, output: "" } }]
-    expect(LearningRecapRender.fromParts(parts, []).tests).toEqual([])
+  test("reports nothing when the turn ran only non-test commands and changed no files", () => {
+    // A routine tool call like `ls` shouldn't get "No files changed / No tests
+    // were run" boilerplate tacked on -- there's nothing to teach here, and
+    // existing output for a turn like this must stay exactly as it was.
+    const parts = [{ type: "tool", tool: "bash", state: { status: "completed", title: "ls -la", metadata: { exit: 0 }, output: "" } }]
+    expect(LearningRecapRender.fromParts(parts, [])).toEqual({})
+  })
+
+  test("still shows the no-tests message when files changed but no tests ran", () => {
+    const changedFiles = [{ file: "src/foo.ts", additions: 4, deletions: 1, status: "modified" as const }]
+    const info = LearningRecapRender.fromParts([], changedFiles)
+    expect(info.tests).toEqual([])
+    expect(info.changedFiles).toEqual(changedFiles)
   })
 
   test("treats a missing exit code as not-run", () => {

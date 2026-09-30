@@ -73,6 +73,9 @@ interface ProcessorContext extends Input {
   needsCompaction: boolean
   currentText: SessionV1.TextPart | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
+  // Set once a tool call actually finishes (not just attempted) -- a denied
+  // permission or an aborted call never sets this, so a turn that did nothing
+  // gets no recap work at all. See #11.
   hadToolCall: boolean
 }
 
@@ -171,6 +174,7 @@ const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
+        ctx.hadToolCall = true
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -221,7 +225,6 @@ const layer = Layer.effect(
         name: string
         providerExecuted?: boolean
       }) {
-        ctx.hadToolCall = true
         const existing = yield* readToolCall(input.id)
         if (existing) {
           if (!input.providerExecuted || existing.part.metadata?.providerExecuted) return existing
