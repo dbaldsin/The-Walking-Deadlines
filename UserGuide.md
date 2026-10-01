@@ -14,9 +14,9 @@ Each recap covers all provider turns in the task, including work before instruct
 ### How to try it
 
 1. Start this checkout with `bun dev` from `packages/opencode`.
-2. Ask: *"Append `<!-- learning recap demo -->` to `packages/opencode/README.md` and run `bun test test/session/learning-recap-render.test.ts` from `packages/opencode`."* Resolve the README path from the repository root. Tests must run from the package directory; this repository disables tests from its root.
+2. Ask: _"Append `<!-- learning recap demo -->` to `packages/opencode/README.md` and run `bun test test/session/learning-recap-render.test.ts` from `packages/opencode`."_ Resolve the README path from the repository root. Tests must run from the package directory; this repository disables tests from its root.
 3. Once it finishes, the final response ends with a `## Learning Recap` section showing the file you changed and the test run's pass/fail status.
-4. Ask *"Explain your previous answer without using tools."* Then ask *"List the repository files without making changes or running tests."* Neither response should have a recap.
+4. Ask _"Explain your previous answer without using tools."_ Then ask _"List the repository files without making changes or running tests."_ Neither response should have a recap.
 
 ### Example output
 
@@ -44,3 +44,67 @@ Run the recap checks from `packages/opencode`:
 bun test test/session/learning-recap*.test.ts
 bun test test/session/prompt.test.ts -t "learning recap"
 ```
+
+## Shared learning recap schema — Dion (#7, PR #23)
+
+The schema gives the team's file collector, decision explanation, test collector, and display one consistent data format. It does not generate explanations or run tests itself. `changedFiles`, `decisions`, and `tests` are optional when information is unavailable. Test results require a command and one of `passed`, `failed`, or `not-run`; a short summary is optional.
+
+### Manual verification
+
+From `packages/opencode`, validate a partial recap:
+
+```sh
+bun -e 'import { Schema } from "effect"; import { LearningRecap } from "./src/session/learning-recap"; console.log(Schema.decodeUnknownSync(LearningRecap.Info)({tests: [{command: "bun test", status: "passed"}]}))'
+```
+
+This prints the valid recap. Replace `passed` with `unknown` and repeat: validation must reject that status. The final recap instructions above demonstrate how teammates use this contract in the running application.
+
+### Automated verification
+
+`packages/opencode/test/session/learning-recap.test.ts` checks complete, empty, and partial recaps and rejects invalid statuses and missing commands. Run `bun test test/session/learning-recap.test.ts` from `packages/opencode`. These checks cover the schema's data contract; the collector, rendering, and multi-turn tests above cover its integration. The new companion story does not replace this original Sprint 1 contribution.
+
+## Project learning companion — Dion (#29)
+
+### Open and ask
+
+Start this checkout with `bun dev` in `packages/opencode`, then open a coding session. Select **Learning companion** in the sidebar or enter `/learn`. At 80×24 a compact **Learn** indicator is available beside the coding input. The overlay's question input stays visible while you scroll with Page Up / Page Down. Escape closes it and returns focus to coding.
+
+Ask “What changed in the last task, and why?” while the coding agent works. The companion uses its own conversation and the coding session's model. Answers start short and refer to completed work. Current file reads are labelled separately from historical changes. Missing evidence is acknowledged. **Simpler** (ctrl+1), **Example** (ctrl+2), and **More** (ctrl+3) create follow-up answers using the original evidence. Old answers stay unchanged; **Newer changes available / Update** (ctrl+u) asks with fresh evidence.
+
+**Cancel answer** (ctrl+k) stops the companion's answer. Suggestions use a separate conversation so they do not delay questions. A meaningful edit, failed test, or finished task can produce one quiet learning question; topics are deduplicated and at least 60 seconds apart. Dismiss a topic or **Pause** (ctrl+p) suggestions. Questions remain available when paused.
+
+### Notebook
+
+Choose **Notebook** (ctrl+n). **Save** (ctrl+s) keeps an answer and its evidence unchanged. Add a personal note with alt+n or a learning goal with alt+g, then press Enter to save. Select entries with alt+↑ / alt+↓ and remove one with ctrl+d or **Remove**. Relevant saved notes are available in later answers and their influence is shown. Notes are stored privately in local OpenCode data, separate between unrelated projects. Reopening a coding session restores its companion chat; a new session starts a fresh chat with the project notebook available.
+
+### Approve a coding improvement
+
+When an answer proposes an improvement, choose **Send to coding agent** (ctrl+g). Read the destination session and edit the exact instruction in the preview. Press Enter to approve and send; choose **Chat** to discard the preview. This sends an ordinary steering message immediately. A running tool finishes before the coding agent handles it at its next available turn. The main input draft, agent, model and settings are preserved. **Sent** appears only after the instruction is confirmed in that conversation. If delivery is uncertain, **Check delivery** checks for the same message; it does not automatically send another copy.
+
+### Manual walkthrough
+
+1. At 80×24, start a task that edits a small file and runs a focused test. Open `/learn` while coding is still active and ask about that change.
+2. Scroll the answer, type a question, and close the overlay. Confirm the coding transcript and unsent coding draft were not changed by companion typing or scrolling.
+3. Try **Simpler**, **Example**, **More**, **Save**, a note and a goal. Restart OpenCode and reopen the coding session: its chat and notebook should return. Open another project: the notebook should be separate.
+4. Finish another meaningful task and wait for a proactive question. Confirm it stays in the card, does not open the overlay, and can be dismissed or paused. Chat should still work while paused.
+5. Ask for one possible improvement. Inspect and edit its preview, approve it during active coding, and confirm one instruction appears in the correct coding conversation. Repeat near the transition to idle. Cancel a task: pending work must not unexpectedly restart.
+6. Ask the companion to edit a file, run a command, or read outside the project. It should explain its limitation. Repeat the recap walkthrough above to verify integration.
+
+### Automated verification
+
+Run focused checks from their package directories:
+
+```sh
+# packages/tui
+bun test test/learning-companion.test.ts test/learning-controller.test.ts test/learning-overlay.test.tsx test/cli/cmd/tui/notifications.test.ts --timeout 30000
+bun typecheck
+
+# packages/opencode
+bun test test/session/learning-companion-tools.test.ts
+bun test test/session/prompt.test.ts test/session/run-state.test.ts --timeout 30000
+bun test test/session/learning-recap*.test.ts --timeout 30000
+bun test test/server/httpapi-session.test.ts -t "round-trips HTTP output formats" --timeout 30000
+bun typecheck
+```
+
+The TUI tests cover bounded completed evidence, valid references, quiet topic rules, locked atomic notebook saves, storage errors, continuity and delivery confirmation, and keyboard/scroll isolation at 80×24 and wider sizes. Backend tests exercise the real trusted tool selection, canonical/symlink boundaries, admission restrictions and steering completion/cancellation races. A provider-input regression excludes old notebook injections while preserving chat history; an actual HTTP test verifies persisted structured-response formats. Recap tests retain the original feature coverage. CI and a teammate review are required before merging this feature.
