@@ -634,7 +634,15 @@ const layer = Layer.effect(
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
-      const agentName = input.agent
+      const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const learning = Agent.isLearningSession(current) || input.agent === Agent.LEARNING_COMPANION
+      if (
+        learning &&
+        (input.parts.some((part) => part.type !== "text") || (input.agent && input.agent !== Agent.LEARNING_COMPANION))
+      ) {
+        throw new Error("The learning companion accepts only text questions and cannot switch agents.")
+      }
+      const agentName = learning ? Agent.LEARNING_COMPANION : input.agent
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
         const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
@@ -670,7 +678,6 @@ const layer = Layer.effect(
         format: input.format,
       }
 
-      const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       if (
         current.agent !== info.agent ||
         current.model?.providerID !== info.model.providerID ||
@@ -1009,6 +1016,10 @@ const layer = Layer.effect(
         { message: info, parts: resolvedParts },
       )
 
+      if (learning && (info.agent !== Agent.LEARNING_COMPANION || resolvedParts.some((part) => part.type !== "text"))) {
+        throw new Error("The learning companion accepts only text questions and cannot switch agents.")
+      }
+
       const parts = yield* Effect.forEach(resolvedParts, (part) =>
         part.type === "file" && part.mime.startsWith("image/")
           ? image.normalize(part).pipe(
@@ -1044,8 +1055,28 @@ const layer = Layer.effect(
         })
       }
 
-      yield* sessions.updateMessage(info)
-      for (const part of parts) yield* sessions.updatePart(part)
+      // History selection must see the user row and all its parts together.
+      yield* state.withAdmission(
+        input.sessionID,
+        Effect.gen(function* () {
+          const existing = input.messageID
+            ? yield* MessageV2.get({ sessionID: input.sessionID, messageID: info.id }).pipe(
+                Effect.provideService(Database.Service, database),
+                Effect.option,
+              )
+            : Option.none()
+          yield* Effect.gen(function* () {
+            yield* sessions.updateMessage(info)
+            for (const part of parts) yield* sessions.updatePart(part)
+          }).pipe(
+            Effect.onExit((exit) =>
+              Exit.isFailure(exit) && Option.isNone(existing)
+                ? sessions.removeMessage({ sessionID: input.sessionID, messageID: info.id }).pipe(Effect.asVoid)
+                : Effect.void,
+            ),
+          )
+        }).pipe(Effect.uninterruptible),
+      )
 
       return { info, parts }
     }, Effect.scoped)
@@ -1053,6 +1084,7 @@ const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
+      const epoch = yield* state.cancellationEpoch(input.sessionID)
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
@@ -1068,7 +1100,7 @@ const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
-      return yield* loop({ sessionID: input.sessionID })
+      return yield* loop({ sessionID: input.sessionID }, epoch)
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -1079,26 +1111,30 @@ const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
+    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionRunState.RunResult> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
         let taskStart: MessageID | undefined
+        let handledUser: SessionV1.User | undefined
+        let reason: "normal" | "stopped" = "stopped"
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
-          let msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
-            Effect.provideService(Database.Service, database),
+          let msgs = yield* state.withAdmission(
+            sessionID,
+            MessageV2.filterCompactedEffect(sessionID).pipe(Effect.provideService(Database.Service, database)),
           )
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
           taskStart ??= lastUser.id
+          handledUser = lastUser
 
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1129,7 +1165,15 @@ const layer = Layer.effect(
               })
             }
             yield* Effect.logInfo("exiting loop", { "session.id": sessionID })
-            if (step > 0 && !lastAssistant.error) {
+            if (!lastAssistant.error && !orphan && !["unknown", "content-filter"].includes(lastAssistant.finish)) {
+              reason = "normal"
+            }
+            if (
+              step > 0 &&
+              reason === "normal" &&
+              !Agent.isLearningSession(session) &&
+              lastUser.agent !== Agent.LEARNING_COMPANION
+            ) {
               // Include work before a busy steer, while keeping later tasks separate.
               const all = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
               const messages = all.slice(all.findIndex((message) => message.info.id === taskStart))
@@ -1243,7 +1287,7 @@ const layer = Layer.effect(
             })
             .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
-          const outcome: "break" | "continue" = yield* Effect.gen(function* () {
+          const outcome: "normal" | "stopped" | "continue" = yield* Effect.gen(function* () {
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
@@ -1257,6 +1301,8 @@ const layer = Layer.effect(
               messages: msgs,
               promptOps,
             }).pipe(
+              Effect.provideService(Agent.Service, agents),
+              Effect.provideService(FSUtil.Service, fsys),
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
               Effect.provideService(ToolRegistry.Service, registry),
@@ -1279,12 +1325,29 @@ const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
+            // Retain the chat transcript, but only expose the current notebook/evidence injection to the model.
+            const modelHistory =
+              Agent.isLearningSession(session) || agent.name === Agent.LEARNING_COMPANION
+                ? msgs.map((row) => {
+                    if (
+                      row.info.role !== "user" ||
+                      !row.parts.some((part) => part.type === "text" && part.metadata?.["learning.context"])
+                    )
+                      return row
+                    return {
+                      ...row,
+                      parts: row.parts
+                        .filter((part) => row.info.id === lastUser.id || part.type !== "text" || !part.synthetic)
+                        .map((part) => (part.type === "text" ? { ...part, metadata: undefined } : part)),
+                    }
+                  })
+                : msgs
             const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(modelHistory, model),
             ])
             const system = [
               ...env,
@@ -1314,7 +1377,7 @@ const layer = Layer.effect(
               handle.message.structured = structured
               handle.message.finish = handle.message.finish ?? "stop"
               yield* sessions.updateMessage(handle.message)
-              return "break" as const
+              return result === "stop" || handle.message.error ? ("stopped" as const) : ("normal" as const)
             }
 
             const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
@@ -1329,7 +1392,7 @@ const layer = Layer.effect(
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
                 yield* events.publish(Session.Event.Error, { sessionID, error: handle.message.error })
-                return "break" as const
+                return "stopped" as const
               }
               if (format.type === "json_schema") {
                 handle.message.error = new SessionV1.StructuredOutputError({
@@ -1337,11 +1400,11 @@ const layer = Layer.effect(
                   retries: 0,
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
-                return "break" as const
+                return "stopped" as const
               }
             }
 
-            if (result === "stop") return "break" as const
+            if (result === "stop") return "stopped" as const
             if (result === "compact") {
               yield* compaction.create({
                 sessionID,
@@ -1356,29 +1419,65 @@ const layer = Layer.effect(
             Effect.ensuring(instruction.clear(handle.message.id)),
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
-          if (outcome === "break") break
+          if (outcome !== "continue") {
+            reason = outcome
+            break
+          }
           continue
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        return yield* lastAssistant(sessionID)
+        const message = yield* lastAssistant(sessionID)
+        if (reason === "normal" && handledUser) return { message, reason, handledUser }
+        return { message, reason: "stopped" }
       },
     )
 
-    const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
-      input: LoopInput,
-    ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+    const loop: (input: LoopInput, expectedEpoch?: number) => Effect.Effect<SessionV1.WithParts> = Effect.fn(
+      "SessionPrompt.loop",
+    )(function* (input: LoopInput, expectedEpoch?: number) {
+      return yield* state.ensureRunning(
+        input.sessionID,
+        lastAssistant(input.sessionID),
+        runLoop(input.sessionID),
+        (handledUser) =>
+          state.withAdmission(
+            input.sessionID,
+            sessions
+              .findMessage(input.sessionID, (message) => message.info.role === "user")
+              .pipe(
+                Effect.orDie,
+                Effect.map(
+                  (latest) =>
+                    Option.isSome(latest) &&
+                    MessageV2.latest([{ info: handledUser, parts: [] }, latest.value]).user?.id !== handledUser.id,
+                ),
+              ),
+          ),
+        expectedEpoch,
+      )
     })
 
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
+      if (
+        input.agent === Agent.LEARNING_COMPANION ||
+        Agent.isLearningSession(yield* sessions.get(input.sessionID).pipe(Effect.orDie))
+      ) {
+        throw new Error("The learning companion cannot execute shell commands.")
+      }
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      if (
+        input.agent === Agent.LEARNING_COMPANION ||
+        Agent.isLearningSession(yield* sessions.get(input.sessionID).pipe(Effect.orDie))
+      ) {
+        throw new Error("The learning companion cannot execute commands.")
+      }
       yield* Effect.logInfo("command", {
         "session.id": input.sessionID,
         command: input.command,
@@ -1391,6 +1490,9 @@ const layer = Layer.effect(
         const error = new NamedError.Unknown({ message: `Command not found: "${input.command}".${hint}` })
         yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
         throw error
+      }
+      if (cmd.agent === Agent.LEARNING_COMPANION) {
+        throw new Error("The learning companion cannot execute commands.")
       }
       const agentName = cmd.agent ?? input.agent
 

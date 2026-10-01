@@ -6,7 +6,7 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { eq } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { fileURLToPath } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -52,7 +52,7 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Format } from "../../src/format"
 import { TestInstance } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
-import { reply, TestLLMServer } from "../lib/llm-server"
+import { raw, reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
@@ -66,6 +66,42 @@ const summary = Layer.succeed(
     computeDiff: () => Effect.succeed([]),
   }),
 )
+
+class CompletionBoundary extends Context.Service<
+  CompletionBoundary,
+  {
+    reached: Deferred.Deferred<void>
+    release: Deferred.Deferred<void>
+  }
+>()("test/CompletionBoundary") {}
+
+const completionBoundary = Layer.effect(
+  CompletionBoundary,
+  Effect.gen(function* () {
+    return { reached: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() }
+  }),
+)
+const completionBoundaryNode = LayerNode.make({ service: CompletionBoundary, layer: completionBoundary, deps: [] })
+
+const boundarySummary = Layer.effect(
+  SessionSummary.Service,
+  Effect.gen(function* () {
+    const boundary = yield* CompletionBoundary
+    let calls = 0
+    return SessionSummary.Service.of({
+      summarize: () => Effect.void,
+      diff: () => Effect.succeed([]),
+      computeDiff: () =>
+        Effect.gen(function* () {
+          if (calls++ === 0) {
+            yield* Deferred.succeed(boundary.reached, undefined)
+            yield* Deferred.await(boundary.release)
+          }
+          return []
+        }),
+    })
+  }),
+).pipe(Layer.provideMerge(completionBoundary))
 
 const ref = {
   providerID: ProviderV2.ID.make("test"),
@@ -221,7 +257,12 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
   return LayerNode.compile(promptRoot, replacements)
 }
 
-function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking"; recap?: boolean }) {
+function makeHttp(input?: {
+  mcpInstructions?: MCP.ServerInstructions[]
+  processor?: "blocking"
+  recap?: boolean
+  boundary?: boolean
+}) {
   const root = LayerNode.group([promptRoot, testLLMServerNode])
   const mocks = [
     [LSP.node, lsp],
@@ -233,6 +274,11 @@ function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processo
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
   }
   if (input?.recap) return LayerNode.compile(root, mocks)
+  if (input?.boundary)
+    return LayerNode.compile(LayerNode.group([root, completionBoundaryNode]), [
+      [SessionSummary.node, boundarySummary],
+      ...mocks,
+    ] as const)
   return LayerNode.compile(root, replacements)
 }
 
@@ -242,6 +288,7 @@ function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[
 
 const it = testEffect(makeHttp())
 const recap = testEffect(makeHttp({ recap: true }))
+const completionRace = testEffect(makeHttp({ boundary: true }).pipe(Layer.provideMerge(completionBoundary)))
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const withMcpInstructions = testEffect(
@@ -864,7 +911,10 @@ recap.instance(
       })
       yield* Deferred.succeed(ready, undefined)
       const result = yield* Fiber.join(run)
-      const text = result.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n")
+      const text = result.parts
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n")
       expect(text).toContain("Fixed the answer.")
       expect(text).toContain("## Learning Recap")
       expect(text).toContain("answer.txt (modified, +1/-1)")
@@ -1600,6 +1650,474 @@ it.instance("prompt submitted during an active run is included in the next LLM i
     const messages = inputs.at(-1)?.messages
     if (!Array.isArray(messages)) throw new Error("expected LLM messages")
     expect(messages.at(-1)).toEqual({ role: "user", content: "second" })
+  }),
+)
+
+completionRace.instance("completion boundary resumes concurrent steers once without duplicating user messages", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const boundary = yield* CompletionBoundary
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.text("first complete")
+    yield* llm.text("steers complete")
+    const first = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "first" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* Deferred.await(boundary.reached)
+    const ids = [MessageID.ascending(), MessageID.ascending(), MessageID.ascending()]
+    const steers = yield* Effect.forEach(ids, (id, i) =>
+      prompt
+        .prompt({
+          sessionID: chat.id,
+          messageID: id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: `steer ${i}` }],
+        })
+        .pipe(Effect.forkChild),
+    )
+    yield* pollWithTimeout(
+      sessions
+        .messages({ sessionID: chat.id })
+        .pipe(
+          Effect.map((messages) =>
+            ids.every((id) => messages.some((message) => message.info.id === id)) ? true : undefined,
+          ),
+        ),
+      "steers were not admitted",
+    )
+    yield* Deferred.succeed(boundary.release, undefined)
+    const results = yield* Effect.all([Fiber.join(first), ...steers.map(Fiber.join)], { concurrency: "unbounded" })
+    expect(yield* llm.calls).toBe(2)
+    expect(new Set(results.map((result) => result.info.id)).size).toBe(1)
+    expect(results[0].parts.some((part) => part.type === "text" && part.text === "steers complete")).toBe(true)
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    expect(messages.filter((message) => message.info.role === "user")).toHaveLength(4)
+    expect(messages.filter((message) => message.info.role === "assistant")).toHaveLength(2)
+    const input = (yield* llm.inputs).at(-1)?.messages
+    expect(JSON.stringify(input)).toContain("steer 0")
+    expect(JSON.stringify(input)).toContain("steer 1")
+    expect(JSON.stringify(input)).toContain("steer 2")
+    yield* prompt.loop({ sessionID: chat.id })
+    expect(yield* llm.calls).toBe(2)
+  }),
+)
+
+for (const failure of [
+  "provider error",
+  "denied tool",
+  "content filter",
+  "missing structured output",
+  "cancelled",
+] as const) {
+  it.instance(`pending steer cannot restart a task after ${failure}`, () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const gate = yield* Deferred.make<void>()
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "bash", pattern: "*", action: "ask" }],
+      })
+      if (failure === "provider error")
+        yield* llm.push(
+          raw({
+            wait: deferredAsPromise(gate),
+            tail: [{ error: { message: "invalid request", type: "invalid_request_error" } }],
+          }),
+        )
+      if (failure === "denied tool")
+        yield* llm.push(reply().wait(deferredAsPromise(gate)).tool("bash", { command: "echo safe", workdir: dir }))
+      if (failure === "content filter") yield* llm.push(reply().wait(deferredAsPromise(gate)).contentFilter())
+      if (failure === "missing structured output")
+        yield* llm.push(reply().wait(deferredAsPromise(gate)).text("no structured output").stop())
+      if (failure === "cancelled") yield* llm.push(reply().wait(deferredAsPromise(gate)).hang())
+      yield* llm.text("fresh reply")
+      const first = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          ...(failure === "missing structured output"
+            ? {
+                format: new SessionV1.OutputFormatJsonSchema({
+                  type: "json_schema",
+                  retryCount: 0,
+                  schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+                }),
+              }
+            : {}),
+          parts: [{ type: "text", text: "first task" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* awaitWithTimeout(llm.wait(1), "provider never reached the gate")
+      const id = MessageID.ascending()
+      const steer = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          messageID: id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "pending steer" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        sessions
+          .messages({ sessionID: chat.id })
+          .pipe(Effect.map((messages) => (messages.some((message) => message.info.id === id) ? true : undefined))),
+        "pending steer was not admitted",
+      )
+      if (failure === "cancelled") yield* prompt.cancel(chat.id)
+      yield* Deferred.succeed(gate, undefined)
+      if (failure === "denied tool") {
+        const permission = yield* Permission.Service
+        const request = yield* pollWithTimeout(
+          permission.list().pipe(Effect.map((requests) => requests.find((request) => request.sessionID === chat.id))),
+          "bash permission was not requested",
+        )
+        yield* permission.reply({ requestID: request.id, reply: "reject" })
+      }
+      const results = yield* awaitWithTimeout(
+        Effect.all([Fiber.join(first), Fiber.join(steer)], { concurrency: "unbounded" }),
+        "task did not settle after the failure",
+      )
+      expect(results[0].info.id).toBe(results[1].info.id)
+      expect(yield* llm.calls).toBe(1)
+      expect(yield* llm.pending).toBe(1)
+      expect(
+        (yield* sessions.messages({ sessionID: chat.id })).filter((message) => message.info.role === "user"),
+      ).toHaveLength(2)
+      if (failure !== "denied tool") {
+        expect(results[0].info.role === "assistant" && results[0].info.error).toBeTruthy()
+      }
+      if (failure === "cancelled") {
+        const fresh = yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "explicit fresh task" }],
+        })
+        expect(fresh.parts.some((part) => part.type === "text" && part.text === "fresh reply")).toBe(true)
+        expect(yield* llm.calls).toBe(2)
+      }
+    }),
+  )
+}
+
+it.instance("structured completion resumes a pending steer and returns its structured response", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const gate = yield* Deferred.make<void>()
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const format = new SessionV1.OutputFormatJsonSchema({
+      type: "json_schema",
+      retryCount: 0,
+      schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+    })
+    yield* llm.push(reply().wait(deferredAsPromise(gate)).tool("StructuredOutput", { answer: "first" }))
+    yield* llm.tool("StructuredOutput", { answer: "second" })
+    const first = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        format,
+        parts: [{ type: "text", text: "first" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    const id = MessageID.ascending()
+    const steer = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: id,
+        agent: "build",
+        model: ref,
+        format,
+        parts: [{ type: "text", text: "second" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* pollWithTimeout(
+      sessions
+        .messages({ sessionID: chat.id })
+        .pipe(Effect.map((messages) => (messages.some((message) => message.info.id === id) ? true : undefined))),
+      "structured steer was not admitted",
+    )
+    yield* Deferred.succeed(gate, undefined)
+    const results = yield* Effect.all([Fiber.join(first), Fiber.join(steer)], { concurrency: "unbounded" })
+    expect(yield* llm.calls).toBe(2)
+    expect(results[0].info.id).toBe(results[1].info.id)
+    expect(results[0].info).toMatchObject({ role: "assistant", parentID: id, structured: { answer: "second" } })
+  }),
+)
+
+it.instance("learning history keeps saved snapshots without replaying old notebook injections", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const source = yield* sessions.create({ title: "Source" })
+    const chat = yield* sessions.create({
+      parentID: source.id,
+      agent: "learning-companion",
+      metadata: { "learning.source": source.id, "learning.role": "chat" },
+    })
+    yield* llm.text("First explanation.")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "learning-companion",
+      model: ref,
+      parts: [
+        {
+          type: "text",
+          text: "Explain validation",
+          metadata: {
+            "learning.context": { notes: [{ id: "removed-note", text: "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER" }] },
+          },
+        },
+        {
+          type: "text",
+          synthetic: true,
+          text: JSON.stringify({
+            savedNotes: [{ id: "removed-note", text: "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER" }],
+          }),
+        },
+      ],
+    })
+    expect(JSON.stringify((yield* llm.inputs)[0])).toContain("PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER")
+    yield* llm.text("Second explanation.")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "learning-companion",
+      model: ref,
+      parts: [
+        { type: "text", text: "Explain tests", metadata: { "learning.context": { notes: [] } } },
+        { type: "text", synthetic: true, text: JSON.stringify({ savedNotes: [] }) },
+      ],
+    })
+    const input = JSON.stringify((yield* llm.inputs).at(-1))
+    expect(input).not.toContain("PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER")
+    expect(input).toContain("First explanation.")
+    expect(input).toContain("Explain validation")
+    expect(JSON.stringify(yield* sessions.messages({ sessionID: chat.id }))).toContain(
+      "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER",
+    )
+  }),
+)
+
+for (const interrupted of [false, true]) {
+  it.instance(
+    `steering admission${interrupted ? " interrupted by its caller" : ""} cannot be handled before its text parts are persisted`,
+    () =>
+      Effect.gen(function* () {
+        const { llm } = yield* useServerConfig(providerCfg)
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const events = yield* EventV2Bridge.Service
+        const state = yield* SessionRunState.Service
+        const tracer = yield* Effect.tracer
+        const chat = yield* sessions.create({ title: "Pinned" })
+        const firstReply = yield* Deferred.make<void>()
+        const admitting = yield* Deferred.make<void>()
+        const partsReady = yield* Deferred.make<void>()
+        const historyRead = yield* Deferred.make<void>()
+        const readerEntered = yield* Deferred.make<void>()
+        let observeHistory = false
+        const id = MessageID.ascending()
+        const off = yield* events.listen((event) =>
+          Effect.gen(function* () {
+            if (event.type !== SessionV1.Event.MessageUpdated.type) return
+            const data = event.data as typeof SessionV1.Event.MessageUpdated.data.Type
+            if (data.info.id !== id) return
+            // The real message projector has committed the row; createUserMessage has not saved any parts yet.
+            yield* Deferred.succeed(admitting, undefined)
+            yield* Deferred.await(partsReady)
+          }),
+        )
+        yield* Effect.addFinalizer(() => off)
+        yield* llm.hold("first answer", deferredAsPromise(firstReply))
+        yield* llm.text("steering answer")
+        const first = yield* prompt
+          .prompt({
+            sessionID: chat.id,
+            agent: "build",
+            model: ref,
+            parts: [{ type: "text", text: "first request" }],
+          })
+          .pipe(
+            Effect.withTracer({
+              span(options) {
+                if (observeHistory && options.name === "SessionRunState.withAdmission") {
+                  Deferred.doneUnsafe(historyRead, Effect.void)
+                }
+                return tracer.span(options)
+              },
+              context: tracer.context,
+            }),
+            Effect.forkChild,
+          )
+        yield* llm.wait(1)
+        const steer = yield* prompt
+          .prompt({
+            sessionID: chat.id,
+            messageID: id,
+            agent: "build",
+            model: ref,
+            parts: [{ type: "text", text: "include this exact steering instruction" }],
+          })
+          .pipe(Effect.forkChild)
+        yield* Deferred.await(admitting)
+        expect((yield* MessageV2.get({ sessionID: chat.id, messageID: id })).parts).toEqual([])
+        const interruptedCaller = interrupted
+          ? yield* Fiber.interrupt(steer).pipe(Effect.asVoid, Effect.forkChild({ startImmediately: true }))
+          : undefined
+        const reader = yield* state
+          .withAdmission(chat.id, Deferred.succeed(readerEntered, undefined))
+          .pipe(Effect.forkChild({ startImmediately: true }))
+        expect(yield* Deferred.isDone(readerEntered)).toBe(false)
+        observeHistory = true
+        yield* Deferred.succeed(firstReply, undefined)
+        yield* awaitWithTimeout(Deferred.await(historyRead), "provider continuation never attempted history selection")
+        expect(yield* llm.calls).toBe(1)
+        yield* Deferred.succeed(partsReady, undefined)
+        yield* Effect.all(
+          [
+            Fiber.join(first),
+            interruptedCaller ? Fiber.join(interruptedCaller) : Fiber.join(steer).pipe(Effect.asVoid),
+            Fiber.join(reader),
+          ],
+          { concurrency: "unbounded" },
+        )
+        expect(JSON.stringify((yield* MessageV2.get({ sessionID: chat.id, messageID: id })).parts)).toContain(
+          "include this exact steering instruction",
+        )
+        const input = (yield* llm.inputs).at(-1)?.messages
+        expect(JSON.stringify(input)).toContain("include this exact steering instruction")
+        expect(yield* llm.calls).toBe(2)
+      }),
+  )
+}
+
+it.instance("failed steering admission removes its partial message before the provider can select it", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const events = yield* EventV2Bridge.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const firstReply = yield* Deferred.make<void>()
+    const id = MessageID.ascending()
+    // Fail the second real durable part projection after the first part has committed.
+    yield* events.project(SessionV1.Event.PartUpdated, (event) =>
+      event.data.part.messageID === id && event.data.part.type === "text" && event.data.part.text === "failed part"
+        ? Effect.die(new Error("part projection failed"))
+        : Effect.void,
+    )
+    yield* llm.hold("first answer", deferredAsPromise(firstReply))
+    yield* llm.text("fresh answer")
+    const first = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "first request" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    const exit = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: id,
+        agent: "build",
+        model: ref,
+        parts: [
+          { type: "text", text: "incomplete steer" },
+          { type: "text", text: "failed part" },
+        ],
+      })
+      .pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect((yield* sessions.messages({ sessionID: chat.id })).some((message) => message.info.id === id)).toBe(false)
+    yield* Deferred.succeed(firstReply, undefined)
+    yield* Fiber.join(first)
+    expect(yield* llm.calls).toBe(1)
+    const fresh = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "explicit fresh request" }],
+    })
+    expect(fresh.parts.some((part) => part.type === "text" && part.text === "fresh answer")).toBe(true)
+    expect(JSON.stringify((yield* llm.inputs).at(-1))).not.toContain("incomplete steer")
+  }),
+)
+
+it.instance("Stop during durable steering admission prevents execution and permits an explicit fresh prompt", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const events = yield* EventV2Bridge.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const admitting = yield* Deferred.make<void>()
+    const partsReady = yield* Deferred.make<void>()
+    const id = MessageID.ascending()
+    const off = yield* events.listen((event) =>
+      Effect.gen(function* () {
+        if (event.type !== SessionV1.Event.MessageUpdated.type) return
+        const data = event.data as typeof SessionV1.Event.MessageUpdated.data.Type
+        if (data.info.id !== id) return
+        yield* Deferred.succeed(admitting, undefined)
+        yield* Deferred.await(partsReady)
+      }),
+    )
+    yield* Effect.addFinalizer(() => off)
+    yield* llm.hang
+    yield* llm.text("fresh reply")
+    const first = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "first request" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    const steer = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "pending steer" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* Deferred.await(admitting)
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID: id })).parts).toEqual([])
+    yield* prompt.cancel(chat.id)
+    expect(yield* llm.calls).toBe(1)
+    yield* Deferred.succeed(partsReady, undefined)
+    yield* Effect.all([Fiber.join(first), Fiber.join(steer)], { concurrency: "unbounded" })
+    expect(yield* llm.calls).toBe(1)
+    expect(yield* llm.pending).toBe(1)
+    const fresh = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "explicit fresh request" }],
+    })
+    expect(fresh.parts.some((part) => part.type === "text" && part.text === "fresh reply")).toBe(true)
+    expect(yield* llm.calls).toBe(2)
   }),
 )
 

@@ -428,6 +428,57 @@ describe("session HttpApi", () => {
   )
 
   it.instance(
+    "round-trips HTTP output formats through persisted message reads",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const session = yield* createSession({ title: "structured format hydration" })
+        const formats = [
+          { type: "text" },
+          {
+            type: "json_schema",
+            schema: { type: "object", properties: { explanation: { type: "string" } }, required: ["explanation"] },
+          },
+        ]
+
+        for (const format of formats) {
+          const message = yield* requestJson<SessionV1.WithParts>(
+            pathFor(SessionPaths.prompt, { sessionID: session.id }),
+            {
+              method: "POST",
+              headers: { ...headers, "content-type": "application/json" },
+              body: JSON.stringify({
+                agent: "build",
+                model: { providerID: "test", modelID: "test-model" },
+                noReply: true,
+                format,
+                parts: [{ type: "text", text: "explain this change" }],
+              }),
+            },
+          )
+          const expected = format.type === "json_schema" ? { ...format, retryCount: 2 } : format
+          expect(message.info).toMatchObject({ role: "user", format: expected })
+
+          const restored = yield* requestJson<SessionV1.WithParts>(
+            pathFor(SessionPaths.message, { sessionID: session.id, messageID: message.info.id }),
+            { headers },
+          )
+          expect(restored.info).toMatchObject({ role: "user", format: expected })
+          const messages = yield* requestJson<SessionV1.WithParts[]>(
+            pathFor(SessionPaths.messages, { sessionID: session.id }),
+            { headers },
+          )
+          expect(messages.find((item) => item.info.id === message.info.id)?.info).toMatchObject({
+            role: "user",
+            format: expected,
+          })
+        }
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
     "returns v2 public request errors for cursor and workspace query failures",
     () =>
       Effect.gen(function* () {
