@@ -592,6 +592,7 @@ const layer = Layer.effect(
           })
         }
         ctx.toolcalls = {}
+
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
       })

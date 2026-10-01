@@ -221,17 +221,18 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
   return LayerNode.compile(promptRoot, replacements)
 }
 
-function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
+function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking"; recap?: boolean }) {
   const root = LayerNode.group([promptRoot, testLLMServerNode])
-  const replacements = [
-    [SessionSummary.node, summary],
+  const mocks = [
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
   ] as const
+  const replacements = [[SessionSummary.node, summary], ...mocks] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
   }
+  if (input?.recap) return LayerNode.compile(root, mocks)
   return LayerNode.compile(root, replacements)
 }
 
@@ -240,6 +241,7 @@ function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[
 }
 
 const it = testEffect(makeHttp())
+const recap = testEffect(makeHttp({ recap: true }))
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const withMcpInstructions = testEffect(
@@ -821,6 +823,139 @@ it.instance("static loop consumes queued replies across turns", () =>
     expect(yield* llm.pending).toBe(0)
   }),
 )
+
+recap.instance(
+  "learning recap appears once on the final response with edits and tests across turns and busy steering",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Learning recap",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* writeText(path.join(dir, "answer.txt"), "before\n")
+      yield* writeText(
+        path.join(dir, "recap.test.ts"),
+        'import { expect, test } from "bun:test"\n' +
+          'test("answer", async () => expect(await Bun.file("answer.txt").text()).toBe("after\\n"))\n',
+      )
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "Fix answer.txt and run its test before and after." }],
+      })
+      yield* llm.tool("bash", { command: "bun test recap.test.ts", workdir: dir })
+      yield* llm.tool("write", { filePath: path.join(dir, "answer.txt"), content: "after\n" })
+      yield* llm.tool("bash", { command: "bun test recap.test.ts", workdir: dir })
+      const ready = yield* Deferred.make<void>()
+      yield* llm.hold("Checks complete.", deferredAsPromise(ready))
+      yield* llm.text("Fixed the answer.")
+
+      const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(4)
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "Also explain the final answer." }],
+      })
+      yield* Deferred.succeed(ready, undefined)
+      const result = yield* Fiber.join(run)
+      const text = result.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n")
+      expect(text).toContain("Fixed the answer.")
+      expect(text).toContain("## Learning Recap")
+      expect(text).toContain("answer.txt (modified, +1/-1)")
+      expect(text).toContain("bun test recap.test.ts: failed")
+      expect(text).toContain("bun test recap.test.ts: passed")
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const recaps = messages.flatMap((message) =>
+        message.parts.filter((part) => part.type === "text" && part.text.startsWith("## Learning Recap")),
+      )
+      expect(recaps).toHaveLength(1)
+      expect(recaps[0]?.messageID).toBe(result.info.id)
+
+      yield* prompt.loop({ sessionID: chat.id })
+      const repeated = yield* sessions.messages({ sessionID: chat.id })
+      expect(
+        repeated.flatMap((message) =>
+          message.parts.filter((part) => part.type === "text" && part.text.startsWith("## Learning Recap")),
+        ),
+      ).toHaveLength(1)
+
+      for (const readOnly of [false, true]) {
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "text", text: "Explain the answer without editing or testing." }],
+        })
+        if (readOnly) yield* llm.tool("read", { filePath: path.join(dir, "answer.txt") })
+        yield* llm.text("The answer is after.")
+        const response = yield* prompt.loop({ sessionID: chat.id })
+        expect(response.parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual([
+          "The answer is after.",
+        ])
+      }
+    }),
+  { git: true },
+  30_000,
+)
+
+for (const failure of ["provider error", "denied tool", "cancelled"] as const) {
+  recap.instance(
+    `learning recap is omitted when a task ends with ${failure} after an edit`,
+    () =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* useServerConfig(providerCfg)
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const chat = yield* sessions.create({
+          title: "Incomplete task",
+          permission: [
+            { permission: "*", pattern: "*", action: "allow" },
+            ...(failure === "denied tool" ? [{ permission: "bash", pattern: "*", action: "ask" as const }] : []),
+          ],
+        })
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "text", text: "Edit answer.txt and check it." }],
+        })
+        yield* llm.tool("write", { filePath: path.join(dir, "answer.txt"), content: "after\n" })
+        if (failure === "provider error") yield* llm.error(400, { error: { message: "invalid request" } })
+        if (failure === "denied tool") yield* llm.tool("bash", { command: "bun test", workdir: dir })
+        if (failure === "cancelled") yield* llm.hang
+
+        const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+        if (failure === "denied tool") {
+          const permission = yield* Permission.Service
+          const request = yield* pollWithTimeout(
+            permission.list().pipe(Effect.map((requests) => requests.find((request) => request.sessionID === chat.id))),
+            "timed out waiting for bash permission",
+          )
+          yield* permission.reply({ requestID: request.id, reply: "reject" })
+        }
+        if (failure === "cancelled") {
+          yield* llm.wait(2)
+          yield* prompt.cancel(chat.id)
+        }
+        const exit = yield* Fiber.await(run)
+        expect(Exit.isSuccess(exit)).toBe(true)
+        const messages = yield* sessions.messages({ sessionID: chat.id })
+        expect(
+          messages.flatMap((message) =>
+            message.parts.filter((part) => part.type === "text" && part.text.startsWith("## Learning Recap")),
+          ),
+        ).toHaveLength(0)
+      }),
+    { git: true },
+    30_000,
+  )
+}
 
 it.instance("loop continues when finish is tool-calls", () =>
   Effect.gen(function* () {
