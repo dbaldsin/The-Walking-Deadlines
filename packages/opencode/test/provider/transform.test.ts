@@ -10,6 +10,48 @@ import { jsonSchema } from "ai"
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
 
+  test("adds error explanation guidance to the final system prompt", async () => {
+    const result = await Effect.runPromise(
+      LLMRequestPrep.prepare({
+        user: {
+          id: "msg_user-test",
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "test",
+          model: { providerID: "anthropic", modelID: "claude-3-5-sonnet" },
+        } as any,
+        sessionID,
+        model: mockModel,
+        agent: {
+          name: "test",
+          mode: "primary",
+          prompt: "Custom agent instructions",
+          options: {},
+          permission: [],
+        } as any,
+        system: [],
+        messages: [{ role: "user", content: "Fix the failing test" }],
+        tools: {},
+        provider: { id: "anthropic", options: {} } as any,
+        auth: undefined,
+        plugin: {
+          trigger: (_name: string, _input: unknown, output: unknown) => Effect.succeed(output),
+          list: () => Effect.succeed([]),
+          init: () => Effect.void,
+        } as any,
+        flags: { outputTokenMax: 32_000, client: "test" } as any,
+        isWorkflow: false,
+      }),
+    )
+
+    expect(result.system[0]).toContain("Custom agent instructions")
+    expect(result.system[0]).toContain("Before making code or file changes to fix it")
+    expect(result.system[0]).toContain("clear, student-friendly language")
+    expect(result.system[0]).toContain("most likely cause")
+    expect(result.system[0]).toContain("Only include this explanation when an error occurs")
+  })
+
   const mockModel = {
     id: "anthropic/claude-3-5-sonnet",
     providerID: "anthropic",
