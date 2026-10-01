@@ -29,6 +29,7 @@ import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
 import { SessionSummary } from "./summary"
+import { LearningRecapRender } from "./learning-recap-render"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
 import { Tool } from "@/tool/tool"
@@ -1083,6 +1084,7 @@ const layer = Layer.effect(
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
+        let taskStart: MessageID | undefined
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
@@ -1096,6 +1098,7 @@ const layer = Layer.effect(
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+          taskStart ??= lastUser.id
 
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1126,6 +1129,28 @@ const layer = Layer.effect(
               })
             }
             yield* Effect.logInfo("exiting loop", { "session.id": sessionID })
+            if (step > 0 && !lastAssistant.error) {
+              // Include work before a busy steer, while keeping later tasks separate.
+              const all = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+              const messages = all.slice(all.findIndex((message) => message.info.id === taskStart))
+              const text = LearningRecapRender.render(
+                LearningRecapRender.fromParts(
+                  messages.flatMap((message) => message.parts),
+                  yield* summary.computeDiff({ messages }),
+                ),
+              )
+              if (text) {
+                const now = Date.now()
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: lastAssistant.id,
+                  sessionID,
+                  type: "text",
+                  text,
+                  time: { start: now, end: now },
+                })
+              }
+            }
             break
           }
 

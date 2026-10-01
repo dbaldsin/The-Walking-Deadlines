@@ -12,7 +12,6 @@ import { Snapshot } from "@/snapshot"
 import { Session } from "./session"
 import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
-import { LearningRecapRender } from "./learning-recap-render"
 import { isOverflow } from "./overflow"
 import { PartID } from "./schema"
 import type { SessionID } from "./schema"
@@ -73,10 +72,6 @@ interface ProcessorContext extends Input {
   needsCompaction: boolean
   currentText: SessionV1.TextPart | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
-  // Set once a tool call actually finishes (not just attempted) -- a denied
-  // permission or an aborted call never sets this, so a turn that did nothing
-  // gets no recap work at all. See #11.
-  hadToolCall: boolean
 }
 
 type StreamEvent = LLMEvent
@@ -116,7 +111,6 @@ const layer = Layer.effect(
         needsCompaction: false,
         currentText: undefined,
         reasoningMap: {},
-        hadToolCall: false,
       }
       let aborted = false
 
@@ -174,7 +168,6 @@ const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
-        ctx.hadToolCall = true
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -599,34 +592,6 @@ const layer = Layer.effect(
           })
         }
         ctx.toolcalls = {}
-
-        // A recap only makes sense for a turn that actually did something; a plain
-        // chat reply has no tool calls and gets no "Learning Recap" appended. See #11.
-        if (ctx.hadToolCall) {
-          // summarize() also runs forked off step-finish, but that fork isn't awaited,
-          // so its diffs aren't guaranteed ready yet here -- run it again, awaited, so
-          // the recap always reads a finished result.
-          yield* summary.summarize({ sessionID: ctx.sessionID, messageID: ctx.assistantMessage.parentID })
-          const changedFiles = yield* summary.diff({
-            sessionID: ctx.sessionID,
-            messageID: ctx.assistantMessage.parentID,
-          })
-          const [latest] = yield* session
-            .messages({ sessionID: ctx.sessionID, limit: 1 })
-            .pipe(Effect.catch(() => Effect.succeed([])))
-          const parts = latest && latest.info.id === ctx.assistantMessage.id ? latest.parts : []
-          const text = LearningRecapRender.render(LearningRecapRender.fromParts(parts, changedFiles))
-          if (text) {
-            yield* session.updatePart({
-              id: PartID.ascending(),
-              messageID: ctx.assistantMessage.id,
-              sessionID: ctx.sessionID,
-              type: "text",
-              text,
-              time: { start: Date.now(), end: Date.now() },
-            })
-          }
-        }
 
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
