@@ -228,10 +228,11 @@ function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processo
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
   ] as const
-  const replacements = input?.recap ? mocks : ([[SessionSummary.node, summary], ...mocks] as const)
+  const replacements = [[SessionSummary.node, summary], ...mocks] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
   }
+  if (input?.recap) return LayerNode.compile(root, mocks)
   return LayerNode.compile(root, replacements)
 }
 
