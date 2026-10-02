@@ -4,6 +4,38 @@ import path from "node:path"
 import { tmpdir } from "./fixture/fixture"
 import { Learning } from "../src/feature-plugins/learning/data"
 
+test("known legacy follow-ups show a short label while ordinary questions stay intact", () => {
+  const question =
+    "Explain this in simpler language.\nOriginal question: Explain tests\nPrevious explanation: Old answer"
+  const turn = { question } as Learning.Turn
+  expect(Learning.question(turn)).toBe("Simpler explanation")
+  expect(turn.question).toBe(question)
+  expect(
+    Learning.question({
+      question: "Original question: explain tests\nPrevious explanation: my own notes",
+    } as Learning.Turn),
+  ).toBe("Original question: explain tests\nPrevious explanation: my own notes")
+  expect(Learning.question({ question: "Explain this in simpler language." } as Learning.Turn)).toBe(
+    "Explain this in simpler language.",
+  )
+})
+
+test("readable source labels keep historical and current lookups distinct", () => {
+  const historical = {
+    id: "secret-internal-id",
+    kind: "observed",
+    label: "Completed read · src/calculator.ts",
+    text: "old evidence",
+  } as Learning.Evidence
+  expect(Learning.sourceLabel(historical)).toBe("Historical file read · src/calculator.ts")
+  expect(Learning.sourceLabel({ ...historical, kind: "current", label: "read: src/calculator.ts" })).toBe(
+    "Current file lookup · src/calculator.ts",
+  )
+  expect(Learning.sourceLabel({ ...historical, label: "Completed apply_patch · msg_1234" })).toBe("Completed edit")
+  expect(historical.id).toBe("secret-internal-id")
+  expect(historical.text).toBe("old evidence")
+})
+
 test("bounded context includes completed evidence, not running tools", () => {
   const context = Learning.context(
     [

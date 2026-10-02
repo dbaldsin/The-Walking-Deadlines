@@ -10,7 +10,7 @@ import { useClipboard } from "../context/clipboard"
 
 export function Dialog(
   props: ParentProps<{
-    size?: "medium" | "large" | "xlarge"
+    size?: "medium" | "large" | "xlarge" | "fullscreen"
     onClose: () => void
   }>,
 ) {
@@ -20,6 +20,7 @@ export function Dialog(
 
   let dismiss = false
   const width = () => {
+    if (props.size === "fullscreen") return dimensions().width - 2
     if (props.size === "xlarge") return 116
     if (props.size === "large") return 88
     return 60
@@ -42,7 +43,7 @@ export function Dialog(
       alignItems="center"
       position="absolute"
       zIndex={3000}
-      paddingTop={dimensions().height / 4}
+      paddingTop={props.size === "fullscreen" ? 1 : dimensions().height / 4}
       left={0}
       top={0}
       backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
@@ -56,9 +57,10 @@ export function Dialog(
           e.stopPropagation()
         }}
         width={width()}
+        height={props.size === "fullscreen" ? dimensions().height - 2 : undefined}
         maxWidth={dimensions().width - 2}
         backgroundColor={theme.backgroundPanel}
-        paddingTop={1}
+        paddingTop={props.size === "fullscreen" ? 0 : 1}
       >
         {props.children}
       </box>
@@ -72,7 +74,7 @@ function init() {
       element: JSX.Element
       onClose?: () => void
     }[],
-    size: "medium" as "medium" | "large" | "xlarge",
+    size: "medium" as "medium" | "large" | "xlarge" | "fullscreen",
   })
 
   const renderer = useRenderer()
@@ -169,7 +171,7 @@ function init() {
     get size() {
       return store.size
     },
-    setSize(size: "medium" | "large" | "xlarge") {
+    setSize(size: "medium" | "large" | "xlarge" | "fullscreen") {
       setStore("size", size)
     },
   }

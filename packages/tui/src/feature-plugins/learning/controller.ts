@@ -9,6 +9,7 @@ import { Learning } from "./data"
 export type CompanionRecord = {
   turns: Learning.Turn[]
   busy: boolean
+  pending?: { label: string }
   error?: string
   topic?: string
   paused: boolean
@@ -62,7 +63,13 @@ function snapshot(value: unknown) {
       typeof item.created === "number" &&
       ["answer", "note", "goal"].includes(String(item.kind)),
   )
-  return { question: value.question, version: value.version, evidence, notes }
+  return {
+    question: value.question,
+    version: value.version,
+    evidence,
+    notes,
+    presentation: Learning.presentation(value.presentation),
+  }
 }
 
 export function createCompanion(api: TuiPluginApi) {
@@ -258,12 +265,23 @@ export function createCompanion(api: TuiPluginApi) {
     return active.child
   }
 
-  async function request(sourceID: string, question: string, role: Role, previous?: Learning.Turn) {
+  async function request(
+    sourceID: string,
+    question: string,
+    role: Role,
+    previous?: Learning.Turn,
+    presentation?: Learning.Presentation,
+  ) {
     const control = ensure(sourceID)
     if (!question.trim() || control.active[role] || disposed) return
     const active = { abort: new AbortController(), cancelled: false } as Active
     control.active[role] = active
-    if (role === "chat") set(sourceID, { busy: true, error: undefined })
+    if (role === "chat")
+      set(sourceID, {
+        busy: true,
+        error: undefined,
+        pending: { label: presentation?.label ?? question.trim().slice(0, 12000) },
+      })
     try {
       await load(sourceID)
       const observed = await sourceRows(sourceID)
@@ -286,6 +304,7 @@ export function createCompanion(api: TuiPluginApi) {
         evidence,
         notes,
         version: previous?.version ?? current.version,
+        presentation,
       }
       const model = settings(control.source!, observed)
       const sessionID = await child(sourceID, role, model, active)
@@ -384,7 +403,7 @@ export function createCompanion(api: TuiPluginApi) {
     } finally {
       if (control.active[role] === active && !active.cancelled) {
         delete control.active[role]
-        if (role === "chat") set(sourceID, "busy", false)
+        if (role === "chat") set(sourceID, { busy: false, pending: undefined })
       }
     }
   }
@@ -407,7 +426,7 @@ export function createCompanion(api: TuiPluginApi) {
     } finally {
       if (control.active[role] === active) {
         delete control.active[role]
-        if (role === "chat") set(sourceID, "busy", false)
+        if (role === "chat") set(sourceID, { busy: false, pending: undefined })
       }
     }
   }
@@ -605,8 +624,8 @@ export function createCompanion(api: TuiPluginApi) {
   return {
     records,
     load,
-    ask: (sourceID: string, question: string, previous?: Learning.Turn) =>
-      request(sourceID, question, "chat", previous),
+    ask: (sourceID: string, question: string, previous?: Learning.Turn, presentation?: Learning.Presentation) =>
+      request(sourceID, question, "chat", previous, presentation),
     cancel,
     pause(sourceID: string, paused: boolean) {
       const control = ensure(sourceID)
@@ -627,7 +646,7 @@ export function createCompanion(api: TuiPluginApi) {
         ? add(
             sourceID,
             "answer",
-            `${turn.question}\n\n${turn.reply.explanation}`,
+            `${Learning.question(turn)}\n\n${turn.reply.explanation}`,
             turn.evidence.filter((item) => turn.reply.evidence.includes(item.id)),
           )
         : Promise.resolve()

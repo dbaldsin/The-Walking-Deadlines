@@ -21,3 +21,23 @@ The earlier capture made after resizing an 80×24 process retained its original 
 This record demonstrates the listed live interactions. The guide also describes separate project notebooks, pause/dismiss, cancellation, access restrictions and additional follow-ups; this record does not establish a live result for each of those cases. Their focused automated checks are listed in [UserGuide.md](../UserGuide.md#automated-verification-1), including the TUI controller/overlay tests and backend companion-tool/steering tests. Run them from their package directories as documented.
 
 The [Sprint 2 checklist](../P2C-Sprint2-Checklist.md) treats feature CI, teammate review and merge into team `main` as remaining delivery gates. This local walkthrough supplies functional evidence; it does not assert those gates have completed.
+
+## October 2 UI redesign verification
+
+The redesigned overlay, sidebar, Notebook and approval preview use the current OpenCode theme, a static identity, collapsed evidence, and a fixed composer. Usage and sequential package commands are in the [User Guide](../UserGuide.md#project-learning-companion--dion-29).
+
+### Automated rendering and interaction
+
+The final local focused run passed **46 tests, 337 assertions** across the learning data, controller, overlay, redesign, fullscreen dialog, and notification suites. Real OpenTUI/Solid rendering checks cover **80×24, 140×24, and 140×36**, including long explanations and instructions, action wrapping, sources expanded without a model request, short follow-up labels, history paging, starter prefills, Notebook resizing and selection, errors, cancellation, session switching, and approval/draft isolation. Controller and persistence tests retain the existing storage and delivery coverage.
+
+Independent static review caught and corrected notebook mode restoration, activation after focus moves to content, Tab traversal of clipped buttons, and overlapping Notebook control cleanup. Each interaction issue has a focused regression. TUI and plugin typechecks passed locally before the last small review corrections; exact final-head typechecking is delegated to CI to limit local load.
+
+### VS Code attempt and resource samples
+
+One **Try the learning companion** VS Code task started this checkout against the tiny calculator demo with `--pure` and all four configured optional MCP integrations disabled locally. The resumed coding session visibly displayed its existing zero-input edit, **2 passed / 0 failed**, and the Learning Recap. Those are historical results, not a new test run during this attempt.
+
+Two idle worker samples measured approximately **182 MiB at 0.4% CPU** and **166 MiB at 0.8% CPU** (`ps` RSS/CPU snapshots). These are point samples rather than a performance benchmark. The local typecheck briefly used about **1.15 GiB RSS**; it completed successfully, and broad suites were kept on CI. Initial disk space was critically low; an inactive npx cache and our generated renderer debug dump were cleared. Free space later recovered above 2 GiB after the check ended. The staged VS Code update cache was retained because its updater restarted.
+
+Computer control repeatedly returned stale AX/screenshot state, a clipboard timeout and `noWindowsAvailable`. Resetting its session revealed the running terminal, but reliable companion input control remained unavailable. **The redesigned UI live walkthrough, native screenshots, and scrolling/answering CPU/RSS samples are still pending.** Automated render fixtures do not establish those live results. To finish: open `/learn` in the running task, capture Chat with collapsed/expanded sources, Notebook and the steering preview; exercise follow-ups, Save, Back and explicit approval while sampling that one worker. Do not start a second instance.
+
+Passing CI and actual teammate approval remain required before merge. The requested Sangyoon review is not replaced by the independent static review above.

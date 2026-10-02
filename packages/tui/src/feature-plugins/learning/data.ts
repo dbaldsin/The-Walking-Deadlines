@@ -7,6 +7,7 @@ import { readJson, writeJsonAtomic } from "../../util/persistence"
 export namespace Learning {
   export type Evidence = { id: string; kind: "observed" | "current"; label: string; text: string }
   export type Reply = { explanation: string; evidence: string[]; notes: string[]; instruction?: string }
+  export type Presentation = { kind: "simpler" | "example" | "more" | "update"; label: string }
   export type Entry = {
     id: string
     kind: "answer" | "note" | "goal"
@@ -21,6 +22,59 @@ export namespace Learning {
     evidence: Evidence[]
     notes: Entry[]
     version: string
+    presentation?: Presentation
+  }
+
+  export function presentation(value: unknown): Presentation | undefined {
+    if (!value || typeof value !== "object") return
+    const item = value as Record<string, unknown>
+    if (!["simpler", "example", "more", "update"].includes(String(item.kind))) return
+    if (typeof item.label !== "string" || !item.label.trim()) return
+    return { kind: item.kind as Presentation["kind"], label: item.label.trim().slice(0, 160) }
+  }
+
+  export function question(turn: Pick<Turn, "question" | "presentation">) {
+    if (turn.presentation) return turn.presentation.label
+    const actions = [
+      ["Explain this in simpler language.", "Simpler explanation"],
+      ["Give one concrete project example.", "Project example"],
+      ["Give one concrete project example with a short code snippet if useful.", "Project example"],
+      ["Explain more deeply; offer an optional understanding check.", "Deeper explanation"],
+    ]
+    return (
+      actions.find(
+        ([prefix]) =>
+          turn.question.startsWith(`${prefix}\nOriginal question: `) &&
+          turn.question.includes("\nPrevious explanation: "),
+      )?.[1] ?? turn.question
+    )
+  }
+
+  export function sourceLabel(evidence: Evidence) {
+    const label = evidence.label
+    if (evidence.kind === "current") {
+      const reference = label.replace(/^(read|glob|grep):\s*/, "")
+      if (!reference.startsWith("{")) return `Current file lookup · ${reference}`
+      try {
+        const input = JSON.parse(reference) as Record<string, unknown>
+        return `Current file lookup · ${input.filePath ?? input.path ?? input.pattern ?? "project"}`
+      } catch {
+        return "Current file lookup"
+      }
+    }
+    const kind = label.startsWith("Completed read ·")
+      ? "Historical file read"
+      : /^Completed (apply_patch|edit|write)\b/.test(label)
+        ? "Completed edit"
+        : label.startsWith("Completed bash ·")
+          ? "Command"
+          : label.startsWith("Completed answer / recap")
+            ? "Completed answer / recap"
+            : label.startsWith("User request")
+              ? "User request"
+              : label
+    const reference = label.split(" · ").slice(1).join(" · ")
+    return reference && !/^msg_|^prt_/.test(reference) ? `${kind} · ${reference}` : kind
   }
 
   export const format = {

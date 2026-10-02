@@ -113,7 +113,9 @@ for (const width of [80, 140])
                       height={3}
                       initialValue="unsent coding draft"
                     />
-                    <CompanionOverlay api={api} companion={companion} sourceID="source" />
+                    <box position="absolute" left={1} top={1} width={width - 2} height={22}>
+                      <CompanionOverlay api={api} companion={companion} sourceID="source" />
+                    </box>
                   </box>
                 </ThemeProvider>
               </KVProvider>

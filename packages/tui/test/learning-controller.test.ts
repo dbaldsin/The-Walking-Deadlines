@@ -274,6 +274,47 @@ test("answers use isolated children, current evidence and stable follow-up snaps
   expect(f.requests.some((request) => request.startsWith("DELETE"))).toBe(false)
 })
 
+test("follow-up display labels survive restore without changing the model prompt or evidence", async () => {
+  await using tmp = await tmpdir()
+  await using f = fixture(tmp.path)
+  await f.companion.ask("source-a", "Explain schema validation")
+  const first = structuredClone(unwrap(f.companion.records["source-a"].turns[0]))
+  const prompt = `Explain this in simpler language.\nOriginal question: ${first.question}\nPrevious explanation: ${first.reply.explanation}`
+  await f.companion.ask("source-a", prompt, first, { kind: "simpler", label: "Simpler explanation" })
+  const turn = f.companion.records["source-a"].turns[1]
+  expect(turn.presentation).toEqual({ kind: "simpler", label: "Simpler explanation" })
+  expect(turn.question).toBe(prompt)
+  expect(turn.evidence).toEqual(first.evidence)
+  expect(f.prompts[1].parts?.[0]).toMatchObject({ text: prompt })
+  const restored = f.create()
+  await restored.load("source-a")
+  expect(restored.records["source-a"].turns[1].presentation).toEqual(turn.presentation)
+  await restored.save("source-a", 1)
+  expect(restored.records["source-a"].entries[0].text).toStartWith("Simpler explanation\n\n")
+  expect(restored.records["source-a"].entries[0].text).not.toContain("Previous explanation:")
+})
+
+test("pending question is source scoped and disappears after cancelling only its companion", async () => {
+  await using tmp = await tmpdir()
+  await using f = fixture(tmp.path)
+  const started = Promise.withResolvers<void>()
+  f.options.pending = async (request) => {
+    started.resolve()
+    return new Promise<Response>((_resolve, reject) =>
+      request.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true }),
+    )
+  }
+  const answering = f.companion.ask("source-a", "Why did this fail?")
+  await started.promise
+  expect(f.companion.records["source-a"].pending).toEqual({ label: "Why did this fail?" })
+  expect(f.companion.records["source-b"]?.pending).toBeUndefined()
+  await f.companion.cancel("source-a")
+  await answering
+  expect(f.companion.records["source-a"].pending).toBeUndefined()
+  expect(f.companion.records["source-a"].busy).toBe(false)
+  expect(f.aborts).not.toContain("source-a")
+})
+
 test("topics cannot block questions; pause and disposal stop only companion children", async () => {
   await using tmp = await tmpdir()
   await using f = fixture(tmp.path)
