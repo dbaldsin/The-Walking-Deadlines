@@ -28,9 +28,9 @@ The redesigned overlay, sidebar, Notebook and approval preview use the current O
 
 ### Automated rendering and interaction
 
-The final local focused run passed **46 tests, 337 assertions** across the learning data, controller, overlay, redesign, fullscreen dialog, and notification suites. Real OpenTUI/Solid rendering checks cover **80×24, 140×24, and 140×36**, including long explanations and instructions, action wrapping, sources expanded without a model request, short follow-up labels, history paging, starter prefills, Notebook resizing and selection, errors, cancellation, session switching, and approval/draft isolation. Controller and persistence tests retain the existing storage and delivery coverage.
+The final local focused run passed **48 tests, 346 assertions** across the learning data, controller, overlay, redesign, fullscreen dialog, and notification suites. Real OpenTUI/Solid rendering checks cover **80×24, 140×24, and 140×36**, including long explanations and instructions, action wrapping, sources expanded without a model request, short follow-up labels, history paging, starter prefills, Notebook resizing and selection, errors, cancellation, session switching, and approval/draft isolation. Controller and persistence tests retain the existing storage and delivery coverage.
 
-Independent static review caught and corrected notebook mode restoration, activation after focus moves to content, Tab traversal of clipped buttons, and overlapping Notebook control cleanup. Each interaction issue has a focused regression. TUI and plugin typechecks passed locally before the last small review corrections; exact final-head typechecking is delegated to CI to limit local load.
+Independent static review caught and corrected notebook mode restoration, activation after focus moves to content, Tab traversal of clipped buttons, and overlapping Notebook control cleanup. Each interaction issue has a focused regression. TUI and plugin typechecks passed locally before the last small review corrections; exact final-head typechecking is delegated to CI to limit local load. CI found a final viewport array inference error at the first redesign commit; it was corrected by adding the actual typed viewport object. The subsequent verification result must be checked on the corrected commit.
 
 ### VS Code attempt and resource samples
 

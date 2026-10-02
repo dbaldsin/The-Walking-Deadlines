@@ -212,6 +212,30 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     setProposal(latest()!.id ?? `${props.sourceID}:${latest()!.version}:${latest()!.question}`)
     change("steer", latest()!.reply.instruction)
   }
+  function page(direction: number) {
+    if (editor() !== "steer") {
+      if (scroll && !scroll.isDestroyed) scroll.scrollBy(direction * 6)
+      return
+    }
+    const input = target()
+    if (!input || input.isDestroyed) return
+    input.focus()
+    const viewport = input.editorView.getViewport()
+    input.editorView.setViewport(
+      viewport.offsetX,
+      Math.max(
+        0,
+        Math.min(
+          input.editorView.getTotalVirtualLineCount() - viewport.height,
+          viewport.offsetY + direction * Math.max(1, viewport.height - 1),
+        ),
+      ),
+      viewport.width,
+      viewport.height,
+      true,
+    )
+    input.requestRender()
+  }
   function focusNext(direction: number) {
     const body = root()
     if (!body) return
@@ -220,7 +244,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
         if (item.node.isDestroyed || !item.node.visible || item.disabled()) return false
         const bounds = [body]
         for (let parent = item.node.parent; parent; parent = parent.parent) {
-          if (parent === scroll?.viewport) bounds.push(parent)
+          if (scroll && parent === scroll.viewport) bounds.push(scroll.viewport)
         }
         return bounds.every(
           (bound) =>
@@ -252,8 +276,8 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
       { key: "tab", desc: "Next companion control", cmd: () => focusNext(1) },
       { key: "shift+tab", desc: "Previous companion control", cmd: () => focusNext(-1) },
       ...(focused() !== "learning-input" ? [{ key: "space", desc: "Activate companion button", cmd: enter }] : []),
-      { key: "pageup", desc: "Scroll companion up", cmd: () => scroll?.scrollBy(-6) },
-      { key: "pagedown", desc: "Scroll companion down", cmd: () => scroll?.scrollBy(6) },
+      { key: "pageup", desc: "Scroll companion up", cmd: () => page(-1) },
+      { key: "pagedown", desc: "Scroll companion down", cmd: () => page(1) },
       { key: "ctrl+n", desc: "Chat / Notebook", cmd: () => switchTab(tab() === "chat" ? "notebook" : "chat") },
       { key: "ctrl+1", desc: "Simpler", cmd: () => follow("simpler") },
       { key: "ctrl+2", desc: "Example", cmd: () => follow("example") },
@@ -760,7 +784,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           {saving()
             ? "Saving…"
             : editor() === "steer"
-              ? "Enter approves · Back keeps your question draft · Esc closes"
+              ? "Enter approves · PgUp/PgDn pages · Back keeps draft · Esc closes"
               : editor() === "question"
                 ? "Enter ask · Shift+Enter newline · Tab buttons · PgUp/PgDn scroll"
                 : "Enter saves · Tab buttons · Ctrl+N chat / notebook"}
