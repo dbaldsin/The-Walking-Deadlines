@@ -180,7 +180,8 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           .add(props.sourceID, mode === "note" ? "note" : "goal", text)
           .then(() => {
             props.api.ui.toast({ variant: "success", message: "Saved to notebook" })
-            if (editor() === mode && target()?.plainText === text) back()
+            const input = target()
+            if (input && !input.isDestroyed && editor() === mode && input.plainText === text) back()
           })
           .finally(() => setSaving(false)),
       )

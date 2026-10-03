@@ -70,6 +70,7 @@ export async function learningView(
   const asked: { question: string; presentation?: Learning.Presentation }[] = []
   const sent: string[] = []
   const removed: string[] = []
+  const toasts: { variant: string; message: string }[] = []
   let main: TextareaRenderable | undefined
   let paneDialog: DialogContext | undefined
   let paneKeymap: OpenTuiKeymap | undefined
@@ -112,7 +113,14 @@ export async function learningView(
           return { name: "session", params: { sessionID: session() } }
         },
       },
-      ui: { ...base.ui, dialog, toast: (options: Parameters<typeof toast.show>[0]) => toast.show(options) },
+      ui: {
+        ...base.ui,
+        dialog,
+        toast: (options: Parameters<typeof toast.show>[0]) => {
+          toasts.push(options)
+          toast.show(options)
+        },
+      },
       state: {
         ...base.state,
         session: {
@@ -217,6 +225,7 @@ export async function learningView(
     asked,
     sent,
     removed,
+    toasts,
     main: () => main!,
     dialog: () => paneDialog!,
     keymap: () => paneKeymap!,
