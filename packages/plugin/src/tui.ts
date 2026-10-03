@@ -120,7 +120,7 @@ export type TuiCommandApi = {
 }
 
 export type TuiDialogProps = {
-  size?: "medium" | "large" | "xlarge" | "fullscreen"
+  size?: "medium" | "large" | "xlarge" | "fullscreen" | "split"
   onClose: () => void
   children?: JSX.Element
 }
@@ -128,8 +128,8 @@ export type TuiDialogProps = {
 export type TuiDialogStack = {
   replace: (render: () => JSX.Element, onClose?: () => void) => void
   clear: () => void
-  setSize: (size: "medium" | "large" | "xlarge" | "fullscreen") => void
-  readonly size: "medium" | "large" | "xlarge" | "fullscreen"
+  setSize: (size: "medium" | "large" | "xlarge" | "fullscreen" | "split") => void
+  readonly size: "medium" | "large" | "xlarge" | "fullscreen" | "split"
   readonly depth: number
   readonly open: boolean
 }
@@ -386,6 +386,7 @@ export type TuiState = {
   session: {
     count: () => number
     get: (sessionID: string) => Session | undefined
+    children?: (sessionID: string) => ReadonlyArray<Session>
     diff: (sessionID: string) => ReadonlyArray<TuiSidebarFileItem>
     todo: (sessionID: string) => ReadonlyArray<TuiSidebarTodoItem>
     messages: (sessionID: string) => ReadonlyArray<Message>

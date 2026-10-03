@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store"
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { useRenderer } from "@opentui/solid"
 import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
@@ -8,6 +8,7 @@ import { useSDK } from "../../context/sdk"
 import { SplitBorder } from "../../ui/border"
 import { useTuiConfig } from "../../config"
 import { useBindings, useOpencodeModeStack } from "../../keymap"
+import { useDialog } from "../../ui/dialog"
 
 const QUESTION_MODE = "question"
 
@@ -17,6 +18,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
   const renderer = useRenderer()
   const tuiConfig = useTuiConfig()
   const modeStack = useOpencodeModeStack()
+  const dialog = useDialog()
 
   const questions = createMemo(() => props.request.questions)
   const single = createMemo(() => questions().length === 1 && questions()[0]?.multiple !== true)
@@ -125,14 +127,20 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
     pick(opt.label)
   }
 
-  onMount(() => {
+  createEffect(() => {
+    if (dialog.stack.length) return
     const popMode = modeStack.push(QUESTION_MODE)
     onCleanup(popMode)
   })
 
+  createEffect(() => {
+    if (dialog.stack.length || !store.editing || !textarea || textarea.isDestroyed) return
+    textarea.focus()
+  })
+
   useBindings(() => ({
     mode: QUESTION_MODE,
-    enabled: store.editing && !confirm(),
+    enabled: !dialog.stack.length && store.editing && !confirm(),
     commands: [
       {
         name: "prompt.clear",
@@ -213,7 +221,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
 
     return {
       mode: QUESTION_MODE,
-      enabled: !store.editing,
+      enabled: !dialog.stack.length && !store.editing,
       commands: [
         {
           name: "app.exit",
@@ -429,6 +437,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                           textarea = val
                           val.traits = { status: "ANSWER" }
                           queueMicrotask(() => {
+                            if (dialog.stack.length || val.isDestroyed) return
                             val.focus()
                             val.gotoLineEnd()
                           })

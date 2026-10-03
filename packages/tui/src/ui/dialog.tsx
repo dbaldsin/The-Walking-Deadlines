@@ -8,9 +8,13 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 
+export function dialogSplitWidth(width: number) {
+  return width >= 128 ? Math.min(86, Math.floor((width - 2) * 0.46)) : 0
+}
+
 export function Dialog(
   props: ParentProps<{
-    size?: "medium" | "large" | "xlarge" | "fullscreen"
+    size?: "medium" | "large" | "xlarge" | "fullscreen" | "split"
     onClose: () => void
   }>,
 ) {
@@ -19,8 +23,11 @@ export function Dialog(
   const renderer = useRenderer()
 
   let dismiss = false
+  const split = () => props.size === "split" && dialogSplitWidth(dimensions().width) > 0
+  const full = () => props.size === "fullscreen" || props.size === "split"
   const width = () => {
-    if (props.size === "fullscreen") return dimensions().width - 2
+    if (split()) return dialogSplitWidth(dimensions().width)
+    if (full()) return dimensions().width - 2
     if (props.size === "xlarge") return 116
     if (props.size === "large") return 88
     return 60
@@ -38,15 +45,15 @@ export function Dialog(
         }
         props.onClose?.()
       }}
-      width={dimensions().width}
-      height={dimensions().height}
+      width={split() ? width() : dimensions().width}
+      height={split() ? dimensions().height - 2 : dimensions().height}
       alignItems="center"
       position="absolute"
       zIndex={3000}
-      paddingTop={props.size === "fullscreen" ? 1 : dimensions().height / 4}
-      left={0}
-      top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      paddingTop={split() ? 0 : full() ? 1 : dimensions().height / 4}
+      left={split() ? dimensions().width - width() - 1 : 0}
+      top={split() ? 1 : 0}
+      backgroundColor={split() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -57,10 +64,12 @@ export function Dialog(
           e.stopPropagation()
         }}
         width={width()}
-        height={props.size === "fullscreen" ? dimensions().height - 2 : undefined}
+        height={full() ? dimensions().height - 2 : undefined}
         maxWidth={dimensions().width - 2}
         backgroundColor={theme.backgroundPanel}
-        paddingTop={props.size === "fullscreen" ? 0 : 1}
+        paddingTop={full() ? 0 : 1}
+        border={split() ? ["left"] : []}
+        borderColor={theme.borderActive}
       >
         {props.children}
       </box>
@@ -74,10 +83,11 @@ function init() {
       element: JSX.Element
       onClose?: () => void
     }[],
-    size: "medium" as "medium" | "large" | "xlarge" | "fullscreen",
+    size: "medium" as "medium" | "large" | "xlarge" | "fullscreen" | "split",
   })
 
   const renderer = useRenderer()
+  const dimensions = useTerminalDimensions()
   const modeStack = useOpencodeModeStack()
 
   createEffect(() => {
@@ -171,7 +181,11 @@ function init() {
     get size() {
       return store.size
     },
-    setSize(size: "medium" | "large" | "xlarge" | "fullscreen") {
+    get splitWidth() {
+      const width = dialogSplitWidth(dimensions().width)
+      return store.stack.length && store.size === "split" && width ? width + 1 : 0
+    },
+    setSize(size: "medium" | "large" | "xlarge" | "fullscreen" | "split") {
       setStore("size", size)
     },
   }

@@ -170,7 +170,15 @@ for (const [width, height] of [
     }
     expect(view.find("answer-turn-0")!.width).toBeLessThanOrEqual(84)
     await view.click("learning-send")
-    expect(view.app.captureCharFrame().replace(/\s+/g, " ")).toContain(title)
+    const destination = view.find("learning-destination")!
+    const lines = view.app.captureCharFrame().split("\n")
+    expect(
+      lines
+        .slice(destination.y, destination.y + destination.height)
+        .map((line) => line.slice(destination.x, destination.x + destination.width))
+        .join(" ")
+        .replace(/\s+/g, " "),
+    ).toContain(title)
     expect(view.input().height).toBeGreaterThanOrEqual(3)
     expect(view.find("learning-approve")!.y + view.find("learning-approve")!.height).toBeLessThanOrEqual(height - 1)
     view.input().setText("Exact instruction\n".repeat(40))

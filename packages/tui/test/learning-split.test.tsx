@@ -1,0 +1,90 @@
+/** @jsxImportSource @opentui/solid */
+import { expect, test } from "bun:test"
+import { ScrollBoxRenderable } from "@opentui/core"
+import { tmpdir } from "./fixture/fixture"
+import { learningTurn, learningView } from "./fixture/learning-view"
+
+for (const height of [24, 36])
+  test(`split companion keeps live coding visible and input isolated at 140×${height}`, async () => {
+    await using tmp = await tmpdir()
+    await using view = await learningView(tmp.path, 140, height)
+    const pane = view.find("learning-overlay")!
+    expect(pane.x).toBeGreaterThanOrEqual(70)
+    expect(pane.width).toBeLessThanOrEqual(70)
+    expect(view.app.captureCharFrame()).toContain("CODING TASK STARTED")
+    await view.app.mockInput.typeText("why this change?")
+    view.setCoding("text", "CODING TEST FINISHED")
+    await view.flush()
+    expect(view.app.captureCharFrame()).toContain("CODING TEST FINISHED")
+    expect(view.input().plainText).toBe("why this change?")
+    expect(view.main().plainText).toBe("unsent coding draft")
+    for (const id of ["learning-input", "learning-layout", "learning-close", "learning-send"]) {
+      const item = view.find(id)!
+      expect(item.x + item.width).toBeLessThanOrEqual(139)
+      expect(item.y + item.height).toBeLessThanOrEqual(height - 1)
+    }
+    expect(view.input().height).toBe(3)
+  })
+
+test("split and fullscreen switches and terminal resizing retain both drafts", async () => {
+  await using tmp = await tmpdir()
+  await using view = await learningView(tmp.path, 140, 36)
+  view.input().setText("unfinished learning question")
+  await view.click("learning-layout")
+  expect(view.find("learning-overlay")!.width).toBe(138)
+  expect(view.input().plainText).toBe("unfinished learning question")
+  await view.click("learning-layout")
+  expect(view.find("learning-overlay")!.width).toBeLessThanOrEqual(70)
+  view.app.renderer.resize(80, 24)
+  await view.flush()
+  expect(view.find("learning-overlay")!.width).toBe(78)
+  expect(view.input().height).toBe(3)
+  view.app.renderer.resize(140, 36)
+  await view.flush()
+  expect(view.find("learning-overlay")!.width).toBeLessThanOrEqual(70)
+  expect(view.input().plainText).toBe("unfinished learning question")
+  expect(view.main().plainText).toBe("unsent coding draft")
+  await view.click("learning-return")
+  expect(view.find("learning-overlay")).toBeUndefined()
+  await Bun.sleep(10)
+  expect(view.app.renderer.currentFocusedRenderable === view.main()).toBe(true)
+})
+
+test("coding status exposes permission and question waits even in narrow fullscreen view", async () => {
+  await using tmp = await tmpdir()
+  await using view = await learningView(tmp.path, 80, 24)
+  expect(view.app.captureCharFrame()).toContain("Coding: Working")
+  view.setCoding("permission", true)
+  await view.flush()
+  expect(view.app.captureCharFrame()).toContain("Waiting for permission")
+  expect(view.find("learning-return")).toBeDefined()
+  view.setCoding({ permission: false, question: true })
+  await view.flush()
+  expect(view.app.captureCharFrame()).toContain("Waiting for your answer")
+  view.setCoding({ question: false, status: "idle" })
+  await view.flush()
+  expect(view.app.captureCharFrame()).toContain("Coding: Idle")
+  view.set("source", { busy: true, pending: { label: "Why a boundary test?" } })
+  await view.flush()
+  expect(view.app.captureCharFrame()).toContain("Coding: Idle")
+})
+
+test("explanation, proposed improvement and quiet learning topic have distinct sections", async () => {
+  await using tmp = await tmpdir()
+  const turn = learningTurn()
+  await using view = await learningView(tmp.path, 140, 36, { turns: [turn], topic: "Why test zero?" })
+  const body = view.find("learning-body") as ScrollBoxRenderable
+  body.scrollTo(0)
+  await view.flush()
+  expect(view.app.captureCharFrame()).toContain("Explanation")
+  expect(view.app.captureCharFrame()).toContain("Suggested improvement")
+  expect(view.app.captureCharFrame()).toContain("Add a negative-input test")
+  expect(view.app.captureCharFrame()).toContain("Learning topic")
+  expect(view.asked).toHaveLength(0)
+  expect(view.sent).toHaveLength(0)
+  await view.click("proposal-turn-0")
+  expect(view.input().plainText).toBe(turn.reply.instruction!)
+  expect(view.sent).toHaveLength(0)
+  await view.click("learning-back")
+  expect(view.sent).toHaveLength(0)
+})

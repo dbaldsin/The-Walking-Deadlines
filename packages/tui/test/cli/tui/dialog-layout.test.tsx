@@ -16,7 +16,7 @@ import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 
 async function mountDialog(root: string) {
   await Bun.write(`${root}/kv.json`, "{}")
-  const [size, setSize] = createSignal<"medium" | "large" | "xlarge" | "fullscreen">()
+  const [size, setSize] = createSignal<"medium" | "large" | "xlarge" | "fullscreen" | "split">()
   let dialog: DialogContext | undefined
   let main: TextareaRenderable | undefined
   let content: TextareaRenderable | undefined
@@ -138,6 +138,44 @@ test("existing dialog sizes preserve their width and quarter-height placement", 
     await view.app.renderOnce()
     expect(view.content().parent!.width).toBe(78)
     expect(view.content().parent!.y).toBe(6)
+  } finally {
+    view.app.renderer.destroy()
+  }
+})
+
+test("split dialogs reserve the right pane and fall back safely on narrow terminals", async () => {
+  await using tmp = await tmpdir()
+  const view = await mountDialog(tmp.path)
+  try {
+    const panel = await view.open("split")
+    expect({ x: panel.x, y: panel.y, width: panel.width, height: panel.height }).toEqual({
+      x: 76,
+      y: 1,
+      width: 63,
+      height: 38,
+    })
+    expect(view.dialog().splitWidth).toBe(64)
+    expect(view.content().x).toBe(77)
+    view.app.renderer.resize(80, 24)
+    await view.app.flush()
+    await view.app.renderOnce()
+    expect({ x: panel.x, y: panel.y, width: panel.width, height: panel.height }).toEqual({
+      x: 1,
+      y: 1,
+      width: 78,
+      height: 22,
+    })
+    expect(view.dialog().splitWidth).toBe(0)
+    view.app.renderer.resize(200, 36)
+    await view.app.flush()
+    await view.app.renderOnce()
+    expect(panel.x).toBe(113)
+    expect(panel.width).toBe(86)
+    expect(view.dialog().splitWidth).toBe(87)
+    view.dialog().clear()
+    await view.app.flush()
+    expect(view.dialog().splitWidth).toBe(0)
+    expect(view.main().plainText).toBe("unsent coding draft")
   } finally {
     view.app.renderer.destroy()
   }

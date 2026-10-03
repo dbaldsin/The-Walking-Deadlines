@@ -8,6 +8,8 @@ import { useBindings } from "../../keymap"
 import { isLearningSession } from "../../util/session"
 import { createCompanion } from "./controller"
 import { Learning } from "./data"
+import { codingActivity } from "./activity"
+import { dialogSplitWidth } from "../../ui/dialog"
 
 type Companion = ReturnType<typeof createCompanion>
 
@@ -19,6 +21,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   const theme = () => props.api.theme.current
   const record = () => props.companion.records[props.sourceID]
   const [tab, setTab] = createSignal<"chat" | "notebook">("chat")
+  const [layout, setLayout] = createSignal<"split" | "fullscreen">("split")
   const [selected, setSelected] = createSignal(0)
   const [editor, setEditor] = createSignal<"question" | "note" | "goal" | "steer">("question")
   const [proposal, setProposal] = createSignal("")
@@ -29,11 +32,14 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   const [target, setTarget] = createSignal<TextareaRenderable>()
   const [root, setRoot] = createSignal<BoxRenderable>()
   const controls = new Map<string, { node: BoxRenderable; run: () => void; disabled: () => boolean }>()
-  const width = () => Math.min(112, dimensions().width - 4)
+  const split = () => layout() === "split" && dialogSplitWidth(dimensions().width) > 0
+  const panelWidth = () => (split() ? dialogSplitWidth(dimensions().width) - 1 : dimensions().width - 2)
+  const width = () => Math.min(112, panelWidth() - 2)
   const wide = () => width() >= 100
   const latest = () => record()?.turns.at(-1)
   const entry = () => record()?.entries[selected()]
   const source = () => props.api.state.session.get(props.sourceID)
+  const activity = createMemo(() => codingActivity(props.api.state, props.sourceID))
   const project = () => source()?.directory?.split(/[\\/]/).filter(Boolean).at(-1) ?? "Project"
   const status = () =>
     record()?.error
@@ -207,10 +213,10 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     )
     target()?.focus()
   }
-  function steer() {
-    if (blocked() || !latest()?.reply.instruction) return
-    setProposal(latest()!.id ?? `${props.sourceID}:${latest()!.version}:${latest()!.question}`)
-    change("steer", latest()!.reply.instruction)
+  function steer(turn = latest()) {
+    if (blocked() || !turn?.reply.instruction) return
+    setProposal(turn.id ?? `${props.sourceID}:${turn.version}:${turn.question}`)
+    change("steer", turn.reply.instruction)
   }
   function page(direction: number) {
     if (editor() !== "steer") {
@@ -292,7 +298,8 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
       { key: "ctrl+k", desc: "Cancel companion answer", cmd: () => run(props.companion.cancel(props.sourceID)) },
       { key: "ctrl+p", desc: "Pause suggestions", cmd: () => props.companion.pause(props.sourceID, !record()?.paused) },
       { key: "ctrl+u", desc: "Update answer", cmd: update },
-      { key: "ctrl+g", desc: "Preview instruction", cmd: steer },
+      { key: "ctrl+g", desc: "Preview instruction", cmd: () => steer() },
+      { key: "alt+w", desc: "Split / fullscreen companion", cmd: () => setLayout(split() ? "fullscreen" : "split") },
       {
         key: "alt+n",
         desc: "New note",
@@ -327,8 +334,8 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     ],
   })
   useBindings(() => ({ ...bindings(), target: root }))
+  createEffect(() => props.api.ui.dialog.setSize(split() ? "split" : "fullscreen"))
   onMount(() => {
-    props.api.ui.dialog.setSize("fullscreen")
     setTimeout(() => {
       if (target() && !target()!.isDestroyed) target()!.focus()
     }, 1)
@@ -381,11 +388,35 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
             {Learning.question(answer.turn)}
           </text>
         </box>
-        <box paddingLeft={1}>
+        <box paddingLeft={1} border={["top", "left"]} borderColor={theme().borderSubtle} title="Explanation">
           <text fg={theme().accent}>
             <b>● Companion</b>
           </text>
           <markdown content={answer.turn.reply.explanation} syntaxStyle={localTheme.syntax()} streaming={false} />
+          <Show when={answer.turn.reply.instruction}>
+            <box
+              marginTop={1}
+              paddingLeft={1}
+              backgroundColor={theme().backgroundElement}
+              border={["top", "left"]}
+              borderColor={theme().warning}
+              title="Suggested improvement"
+            >
+              <text fg={theme().text} wrapMode="word">
+                {answer.turn.reply.instruction!.slice(0, 180)}
+                {answer.turn.reply.instruction!.length > 180 ? "…" : ""}
+              </text>
+              <box flexDirection="row" flexWrap="wrap" gap={1}>
+                <text fg={theme().warning}>Needs your approval</text>
+                <Action
+                  id={`proposal-${id()}`}
+                  label="Review proposal"
+                  disabled={blocked()}
+                  run={() => steer(answer.turn)}
+                />
+              </box>
+            </box>
+          </Show>
           <box flexDirection="row" flexWrap="wrap" gap={1} marginTop={1}>
             <Show when={evidence().length}>
               <Action
@@ -493,7 +524,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     <box
       ref={setRoot}
       id="learning-overlay"
-      width={dimensions().width - 2}
+      width={panelWidth()}
       height={Math.max(8, dimensions().height - 2)}
       paddingLeft={1}
       paddingRight={1}
@@ -503,14 +534,34 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
         <box flexDirection="row" height={1} flexShrink={0} justifyContent="space-between">
           <text fg={theme().accent}>
             <b>● Learning companion</b>
-            <span style={{ fg: theme().textMuted }}> · {project().slice(0, width() < 100 ? 14 : 28)}</span>
+            <span style={{ fg: theme().textMuted }}> · {project().slice(0, width() < 80 ? 10 : 28)}</span>
           </text>
-          <box flexDirection="row" gap={1}>
-            <text fg={tone()}>
-              <b>{status()}</b>
-            </text>
-            <Action id="learning-close" label="Close" hint="Esc" run={() => props.api.ui.dialog.clear()} />
-          </box>
+          <Action id="learning-close" label="Close" hint="Esc" run={() => props.api.ui.dialog.clear()} />
+        </box>
+        <box
+          flexDirection="row"
+          flexWrap="wrap"
+          gap={1}
+          flexShrink={0}
+          border={["bottom"]}
+          borderColor={theme().borderSubtle}
+        >
+          <text fg={tone()}>
+            Companion: <b>{status()}</b>
+          </text>
+          <Action
+            id="learning-layout"
+            label={split() ? "Fullscreen" : "Split view"}
+            hint="Alt+W"
+            disabled={!split() && !dialogSplitWidth(dimensions().width)}
+            run={() => setLayout(split() ? "fullscreen" : "split")}
+          />
+        </box>
+        <box flexDirection="row" flexWrap="wrap" gap={1} flexShrink={0}>
+          <text fg={activity().attention ? theme().warning : theme().textMuted}>
+            Coding: <b>{activity().label}</b>
+          </text>
+          <Action id="learning-return" label="Return to coding" run={() => props.api.ui.dialog.clear()} />
         </box>
         <box flexDirection="row" flexWrap="wrap" gap={1} marginBottom={1} flexShrink={0}>
           <Action
@@ -528,7 +579,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           />
           <Action
             id="learning-pause"
-            label={record()?.paused ? "Resume" : "Pause"}
+            label={record()?.paused ? "Resume topics" : "Pause topics"}
             run={() => props.companion.pause(props.sourceID, !record()?.paused)}
           />
           <Show when={record()?.busy}>
@@ -554,7 +605,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
               <text fg={theme().accent}>
                 <b>Send to coding agent</b>
               </text>
-              <text fg={theme().text} wrapMode="char">
+              <text id="learning-destination" fg={theme().text} wrapMode="word">
                 Destination: {source()?.title ?? "Coding session"}
               </text>
               <text fg={theme().textMuted} wrapMode="char">
@@ -623,14 +674,18 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
                 </box>
               </Show>
               <Show when={record()?.topic}>
-                <box marginBottom={1} maxWidth={84}>
-                  <text fg={theme().accent}>
-                    <b>A topic to explore</b>
-                  </text>
+                <box
+                  marginBottom={1}
+                  maxWidth={84}
+                  paddingLeft={1}
+                  border={["top", "left"]}
+                  borderColor={theme().accent}
+                  title="Learning topic"
+                >
                   <text wrapMode="word" fg={theme().text}>
                     {record()?.topic}
                   </text>
-                  <box flexDirection="row" gap={1}>
+                  <box flexDirection="row" flexWrap="wrap" gap={1}>
                     <Action
                       id="learning-topic"
                       label="Explore topic"
@@ -799,7 +854,6 @@ const tui: TuiPlugin = async (api) => {
   function open(sourceID: string) {
     if (isLearningSession(api.state.session.get(sourceID))) return
     api.ui.dialog.replace(() => <CompanionOverlay api={api} companion={companion} sourceID={sourceID} />)
-    api.ui.dialog.setSize("fullscreen")
   }
   api.keymap.registerLayer({
     commands: [
@@ -849,6 +903,9 @@ const tui: TuiPlugin = async (api) => {
             <span style={{ fg: api.theme.current.textMuted }}> · {status()}</span>
           </text>
           <Show when={!props.compact}>
+            <Show when={state()?.topic}>
+              <text fg={api.theme.current.accent}>Learning topic</text>
+            </Show>
             <text fg={api.theme.current.textMuted} wrapMode="word">
               {state()?.topic ?? "Understand your project's changes."}
             </text>

@@ -2,9 +2,10 @@
 import { CodeRenderable, TextareaRenderable, type Renderable } from "@opentui/core"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
+import type { QuestionRequest } from "@opencode-ai/sdk/v2"
 import { CompanionOverlay } from "../../src/feature-plugins/learning"
 import type { CompanionRecord, createCompanion } from "../../src/feature-plugins/learning/controller"
 import type { Learning } from "../../src/feature-plugins/learning/data"
@@ -17,6 +18,10 @@ import { ToastProvider } from "../../src/ui/toast"
 import { TestTuiContexts } from "./tui-environment"
 import { createTuiPluginApi } from "./tui-plugin"
 import { createTuiResolvedConfig } from "./tui-runtime"
+import { SessionLayout } from "../../src/component/session-layout"
+import { SDKProvider } from "../../src/context/sdk"
+import { QuestionPrompt } from "../../src/routes/session/question"
+import { createFetch, eventSource } from "./tui-sdk"
 
 export function learningTurn(index = 0): Learning.Turn {
   return {
@@ -48,12 +53,20 @@ export async function learningView(
   initial: Partial<CompanionRecord> = {},
   mode: "dark" | "light" = "dark",
   title = "Calculator demo",
+  options: { fetch?: typeof globalThis.fetch } = {},
 ) {
   await Bun.write(`${directory}/kv.json`, "{}")
   const [records, set] = createStore<Record<string, CompanionRecord>>({
     source: { turns: [learningTurn()], entries: [], busy: false, paused: false, version: "v", ...initial },
   })
   const [session, setSession] = createSignal("source")
+  const [codingQuestion, setCodingQuestion] = createSignal<QuestionRequest>()
+  const [coding, setCoding] = createStore({
+    text: "CODING TASK STARTED",
+    status: "busy",
+    permission: false,
+    question: false,
+  })
   const asked: { question: string; presentation?: Learning.Presentation }[] = []
   const sent: string[] = []
   const removed: string[] = []
@@ -97,7 +110,13 @@ export async function learningView(
       ui: { ...base.ui, dialog },
       state: {
         ...base.state,
-        session: { ...base.state.session, get: () => ({ id: "source", title, directory }) },
+        session: {
+          ...base.state.session,
+          get: () => ({ id: "source", title, directory }),
+          status: () => ({ type: coding.status }),
+          permission: () => (coding.permission ? [{ id: "permission" }] : []),
+          question: () => (coding.question ? [{ id: "question" }] : []),
+        },
       },
     } as unknown as TuiPluginApi
     onMount(() => {
@@ -105,13 +124,21 @@ export async function learningView(
       dialog.replace(() => <CompanionOverlay api={api} companion={companion} sourceID="source" />)
     })
     return (
-      <textarea
-        ref={(value) => {
-          main = value
-        }}
-        height={3}
-        initialValue="unsent coding draft"
-      />
+      <SessionLayout>
+        <box id="coding-pane" flexGrow={1} minWidth={0}>
+          <text id="coding-transcript">{coding.text}</text>
+          <textarea
+            ref={(value) => {
+              main = value
+            }}
+            height={3}
+            initialValue="unsent coding draft"
+          />
+          <Show when={codingQuestion()}>
+            {(request) => <QuestionPrompt request={request()} directory={directory} />}
+          </Show>
+        </box>
+      </SessionLayout>
     )
   }
   function Harness() {
@@ -121,17 +148,24 @@ export async function learningView(
     return (
       <TestTuiContexts directory={directory} paths={{ state: directory, worktree: directory }}>
         <OpencodeKeymapProvider keymap={keymap}>
-          <TuiConfigProvider config={createTuiResolvedConfig()}>
-            <KVProvider>
-              <ThemeProvider mode={mode} source={{ discover: async () => ({}) }}>
-                <ToastProvider>
-                  <DialogProvider>
-                    <Control />
-                  </DialogProvider>
-                </ToastProvider>
-              </ThemeProvider>
-            </KVProvider>
-          </TuiConfigProvider>
+          <SDKProvider
+            url="http://learning-view.test"
+            directory={directory}
+            fetch={options.fetch ?? createFetch().fetch}
+            events={eventSource()}
+          >
+            <TuiConfigProvider config={createTuiResolvedConfig()}>
+              <KVProvider>
+                <ThemeProvider mode={mode} source={{ discover: async () => ({}) }}>
+                  <ToastProvider>
+                    <DialogProvider>
+                      <Control />
+                    </DialogProvider>
+                  </ToastProvider>
+                </ThemeProvider>
+              </KVProvider>
+            </TuiConfigProvider>
+          </SDKProvider>
         </OpencodeKeymapProvider>
       </TestTuiContexts>
     )
@@ -173,6 +207,8 @@ export async function learningView(
     records,
     set,
     setSession,
+    setCoding,
+    setCodingQuestion,
     asked,
     sent,
     removed,
