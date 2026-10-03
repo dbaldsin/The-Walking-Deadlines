@@ -904,6 +904,76 @@ recap.instance(
   30_000,
 )
 
+recap.instance(
+  "learning recap lists added, modified, and deleted files with the status git reports",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Changed files",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* writeText(path.join(dir, "grew.txt"), "one\n")
+      yield* writeText(path.join(dir, "old.txt"), "gone\n")
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "Add new.txt, add a line to grew.txt, and delete old.txt." }],
+      })
+      yield* llm.tool("write", { filePath: path.join(dir, "new.txt"), content: "hello\n" })
+      yield* llm.tool("write", { filePath: path.join(dir, "grew.txt"), content: "one\ntwo\n" })
+      yield* llm.tool("bash", { command: "rm old.txt", workdir: dir })
+      yield* llm.text("Done.")
+
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      const text = result.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n")
+      expect(text).toContain("## Learning Recap")
+      expect(text).toContain("- new.txt (added, +1/-0)")
+      // grew.txt only gained lines, so its line counts look like a new file; git still reports it as modified.
+      expect(text).toContain("- grew.txt (modified, +1/-0)")
+      expect(text).toContain("- old.txt (deleted, +0/-1)")
+      expect(text).toContain("- No tests were run during this task.")
+    }),
+  { git: true },
+  30_000,
+)
+
+recap.instance(
+  "learning recap says no files changed when a task only runs tests",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Tests only",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* writeText(
+        path.join(dir, "check.test.ts"),
+        'import { expect, test } from "bun:test"\ntest("adds", () => expect(1 + 1).toBe(2))\n',
+      )
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "Run the tests without changing anything." }],
+      })
+      yield* llm.tool("bash", { command: "bun test check.test.ts", workdir: dir })
+      yield* llm.text("All tests pass.")
+
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      const text = result.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n")
+      expect(text).toContain("### Files changed\n- No files were changed during this task.")
+      expect(text).toContain("bun test check.test.ts: passed")
+    }),
+  { git: true },
+  30_000,
+)
+
 for (const failure of ["provider error", "denied tool", "cancelled"] as const) {
   recap.instance(
     `learning recap is omitted when a task ends with ${failure} after an edit`,
