@@ -1,5 +1,5 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
-import { BoxRenderable, MouseButton, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
+import { BoxRenderable, MouseButton, ScrollBoxRenderable, TextareaRenderable, type RGBA } from "@opentui/core"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { selectedForeground, useTheme } from "../../context/theme"
@@ -10,6 +10,7 @@ import { createCompanion } from "./controller"
 import { Learning } from "./data"
 import { codingActivity } from "./activity"
 import { dialogSplitWidth } from "../../ui/dialog"
+import { Notebook, type NotebookHandle } from "./notebook"
 
 type Companion = ReturnType<typeof createCompanion>
 
@@ -22,7 +23,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   const record = () => props.companion.records[props.sourceID]
   const [tab, setTab] = createSignal<"chat" | "notebook">("chat")
   const [layout, setLayout] = createSignal<"split" | "fullscreen">("split")
-  const [selected, setSelected] = createSignal(0)
+  const [notebook, setNotebook] = createSignal<NotebookHandle>()
   const [editor, setEditor] = createSignal<"question" | "note" | "goal" | "steer">("question")
   const [proposal, setProposal] = createSignal("")
   const [saving, setSaving] = createSignal(false)
@@ -35,9 +36,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   const split = () => layout() === "split" && dialogSplitWidth(dimensions().width) > 0
   const panelWidth = () => (split() ? dialogSplitWidth(dimensions().width) - 1 : dimensions().width - 2)
   const width = () => Math.min(112, panelWidth() - 2)
-  const wide = () => width() >= 100
   const latest = () => record()?.turns.at(-1)
-  const entry = () => record()?.entries[selected()]
   const source = () => props.api.state.session.get(props.sourceID)
   const activity = createMemo(() => codingActivity(props.api.state, props.sourceID))
   const project = () => source()?.directory?.split(/[\\/]/).filter(Boolean).at(-1) ?? "Project"
@@ -77,6 +76,8 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     run: () => void
     disabled?: boolean
     active?: boolean
+    marker?: RGBA
+    fullWidth?: boolean
   }) {
     let node: BoxRenderable | undefined
     let pressed = false
@@ -98,6 +99,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           })
         }}
         height={1}
+        width={action.fullWidth ? "100%" : undefined}
         flexShrink={0}
         paddingLeft={1}
         paddingRight={1}
@@ -123,6 +125,9 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
                 : theme().text
           }
         >
+          <Show when={action.marker}>
+            <span style={{ fg: action.marker }}>● </span>
+          </Show>
           <b>{action.label}</b>
           <Show when={action.hint}>
             <span
@@ -143,7 +148,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     if (editor() === "question" && next !== "question") draft = target()?.plainText ?? ""
     setEditor(next)
     target()?.setText(value)
-    target()?.focus()
+    if (props.api.ui.dialog.blocking) target()?.focus()
   }
   function back() {
     change("question", draft)
@@ -151,6 +156,10 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   function switchTab(next: ReturnType<typeof tab>) {
     if (editor() !== "question") back()
     setTab(next)
+    queueMicrotask(() => {
+      if (!scroll || scroll.isDestroyed) return
+      scroll.scrollTo(next === "notebook" ? 0 : scroll.scrollHeight)
+    })
     target()?.focus()
   }
   function submit() {
@@ -275,12 +284,27 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     if (current) controls.get(current.id)?.run()
   }
   const bindings = () => ({
-    enabled: !!root(),
+    enabled: !!root() && props.api.ui.dialog.blocking,
     priority: 1000,
     bindings: [
       { key: "return", desc: "Ask / activate button / approve preview", cmd: enter },
       { key: "tab", desc: "Next companion control", cmd: () => focusNext(1) },
-      { key: "shift+tab", desc: "Previous companion control", cmd: () => focusNext(-1) },
+      {
+        key: "shift+tab",
+        desc: "Coding mode / previous companion control",
+        cmd: () => {
+          if (
+            tab() === "chat" &&
+            editor() === "question" &&
+            renderer.currentFocusedRenderable === target() &&
+            props.api.keymap.getCommands().some((command) => command.name === "learning.cycle-back")
+          ) {
+            props.api.keymap.dispatchCommand("learning.cycle-back")
+            return
+          }
+          focusNext(-1)
+        },
+      },
       ...(focused() !== "learning-input" ? [{ key: "space", desc: "Activate companion button", cmd: enter }] : []),
       { key: "pageup", desc: "Scroll companion up", cmd: () => page(-1) },
       { key: "pagedown", desc: "Scroll companion down", cmd: () => page(1) },
@@ -318,17 +342,18 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           change("goal")
         },
       },
-      { key: "alt+up", desc: "Previous notebook entry", cmd: () => setSelected(Math.max(0, selected() - 1)) },
+      { key: "alt+up", desc: "Previous notebook entry", cmd: () => notebook()?.move(-1) },
       {
         key: "alt+down",
         desc: "Next notebook entry",
-        cmd: () => setSelected(Math.min((record()?.entries.length ?? 1) - 1, selected() + 1)),
+        cmd: () => notebook()?.move(1),
       },
       {
         key: "ctrl+d",
         desc: "Remove notebook entry",
         cmd: () => {
-          if (tab() === "notebook" && entry()) run(props.companion.remove(props.sourceID, entry()!.id))
+          const entry = notebook()?.selected()
+          if (tab() === "notebook" && entry) run(props.companion.remove(props.sourceID, entry.id))
         },
       },
     ],
@@ -337,7 +362,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   createEffect(() => props.api.ui.dialog.setSize(split() ? "split" : "fullscreen"))
   onMount(() => {
     setTimeout(() => {
-      if (target() && !target()!.isDestroyed) target()!.focus()
+      if (props.api.ui.dialog.blocking && target() && !target()!.isDestroyed) target()!.focus()
     }, 1)
     run(props.companion.load(props.sourceID))
   })
@@ -346,7 +371,16 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     if (current.name !== "session" || current.params?.sessionID !== props.sourceID) props.api.ui.dialog.clear()
   })
   createEffect(() => {
-    if (selected() >= (record()?.entries.length ?? 0)) setSelected(Math.max(0, (record()?.entries.length ?? 1) - 1))
+    if (!props.api.ui.dialog.blocking) return
+    queueMicrotask(() => {
+      if (!props.api.ui.dialog.blocking) return
+      for (let node = renderer.currentFocusedRenderable; node; node = node.parent ?? null) {
+        if (node === root()) return
+      }
+      const previous = controls.get(focused())?.node
+      if (previous && !previous.isDestroyed) previous.focus()
+      else if (target() && !target()!.isDestroyed) target()!.focus()
+    })
   })
 
   function Evidence(props: { evidence: Learning.Evidence[]; prefix: string }) {
@@ -451,75 +485,6 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
       </box>
     )
   }
-  function NotebookDetail() {
-    return (
-      <box id="notebook-detail" flexGrow={1} minWidth={1} maxWidth={84}>
-        <text fg={theme().accent}>
-          <b>
-            {entry()!.kind === "answer" ? "Saved answer" : entry()!.kind === "goal" ? "Learning goal" : "Personal note"}
-          </b>
-        </text>
-        <markdown content={entry()!.text} syntaxStyle={localTheme.syntax()} streaming={false} />
-        <Show when={entry()?.evidence?.length}>
-          <box marginTop={1}>
-            <Action
-              id="notebook-sources"
-              label={`Sources · ${entry()!.evidence!.length}`}
-              run={() => toggle(`notebook:${entry()!.id}`)}
-            />
-            <Show when={expanded()[`notebook:${entry()!.id}`]}>
-              <Evidence evidence={entry()!.evidence!} prefix={entry()!.id} />
-            </Show>
-          </box>
-        </Show>
-        <box marginTop={1}>
-          <Action
-            id="notebook-remove"
-            label="Remove entry"
-            hint="Ctrl+D"
-            run={() => run(props.companion.remove(props.sourceID, entry()!.id))}
-          />
-        </box>
-      </box>
-    )
-  }
-  function Notebook() {
-    return (
-      <box flexDirection={wide() ? "row" : "column"} gap={2}>
-        <box width={wide() ? 26 : "100%"} flexShrink={0} gap={1}>
-          <text fg={theme().textMuted}>Your project notebook</text>
-          <Show when={!record()?.entries.length}>
-            <text fg={theme().textMuted}>Save an answer, note, or goal.</text>
-          </Show>
-          <For each={record()?.entries}>
-            {(item, index) => (
-              <box id={`notebook-row-${item.id}`}>
-                <Action
-                  id={`notebook-entry-${item.id}`}
-                  label={`${item.kind === "answer" ? "Answer" : item.kind === "goal" ? "Goal" : "Note"} · ${new Date(item.created).toLocaleDateString()}`}
-                  active={selected() === index()}
-                  run={() => {
-                    setSelected(index())
-                    target()?.focus()
-                  }}
-                />
-                <text fg={theme().textMuted} wrapMode="none">
-                  {item.text.split("\n")[0].slice(0, wide() ? 24 : width() - 2)}
-                </text>
-                <Show when={!wide() && selected() === index()}>
-                  <NotebookDetail />
-                </Show>
-              </box>
-            )}
-          </For>
-        </box>
-        <Show when={wide() && entry()}>
-          <NotebookDetail />
-        </Show>
-      </box>
-    )
-  }
-
   return (
     <box
       ref={setRoot}
@@ -533,10 +498,15 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
       <box width="100%" maxWidth={112} height="100%">
         <box flexDirection="row" height={1} flexShrink={0} justifyContent="space-between">
           <text fg={theme().accent}>
-            <b>● Learning companion</b>
+            <b>{props.api.ui.dialog.blocking ? "●" : "○"} Learning companion</b>
             <span style={{ fg: theme().textMuted }}> · {project().slice(0, width() < 80 ? 10 : 28)}</span>
           </text>
-          <Action id="learning-close" label="Close" hint="Esc" run={() => props.api.ui.dialog.clear()} />
+          <Action
+            id="learning-close"
+            label="Close"
+            hint={props.api.ui.dialog.blocking ? "Esc" : undefined}
+            run={() => props.api.ui.dialog.clear()}
+          />
         </box>
         <box
           flexDirection="row"
@@ -547,7 +517,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           borderColor={theme().borderSubtle}
         >
           <text fg={tone()}>
-            Companion: <b>{status()}</b>
+            Companion: <b>{status()}</b> · {props.api.ui.dialog.blocking ? "Typing here" : "Visible"}
           </text>
           <Action
             id="learning-layout"
@@ -561,7 +531,14 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           <text fg={activity().attention ? theme().warning : theme().textMuted}>
             Coding: <b>{activity().label}</b>
           </text>
-          <Action id="learning-return" label="Return to coding" run={() => props.api.ui.dialog.clear()} />
+          <Action
+            id="learning-return"
+            label={split() ? "Focus coding" : "Return to coding"}
+            run={() => {
+              if (split()) props.api.ui.dialog.blur()
+              else props.api.ui.dialog.clear()
+            }}
+          />
         </box>
         <box flexDirection="row" flexWrap="wrap" gap={1} marginBottom={1} flexShrink={0}>
           <Action
@@ -623,10 +600,25 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
             flexGrow={1}
             flexShrink={1}
             minHeight={1}
-            stickyScroll={true}
+            stickyScroll={tab() === "chat"}
             stickyStart="bottom"
           >
-            <Show when={tab() === "chat"} fallback={<Notebook />}>
+            <Show
+              when={tab() === "chat"}
+              fallback={
+                <Notebook
+                  entries={record()?.entries ?? []}
+                  width={width()}
+                  theme={theme()}
+                  syntax={localTheme.syntax()}
+                  Action={Action}
+                  Evidence={Evidence}
+                  focusInput={() => target()?.focus()}
+                  remove={(id) => run(props.companion.remove(props.sourceID, id))}
+                  ref={setNotebook}
+                />
+              }
+            >
               <Show when={!record()?.turns.length && !record()?.busy}>
                 <box gap={1} maxWidth={84}>
                   <text fg={theme().accent}>
@@ -841,7 +833,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
             : editor() === "steer"
               ? "Enter approves · PgUp/PgDn pages · Back keeps draft · Esc closes"
               : editor() === "question"
-                ? "Enter ask · Shift+Enter newline · Tab buttons · PgUp/PgDn scroll"
+                ? "Enter ask · Shift+Enter newline · Shift+Tab coding · Tab buttons · PgUp/PgDn scroll"
                 : "Enter saves · Tab buttons · Ctrl+N chat / notebook"}
         </text>
       </box>
@@ -851,9 +843,20 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
 
 const tui: TuiPlugin = async (api) => {
   const companion = createCompanion(api)
+  let opened: string | undefined
   function open(sourceID: string) {
     if (isLearningSession(api.state.session.get(sourceID))) return
-    api.ui.dialog.replace(() => <CompanionOverlay api={api} companion={companion} sourceID={sourceID} />)
+    if (opened === sourceID && api.ui.dialog.open) {
+      api.ui.dialog.focus()
+      return
+    }
+    api.ui.dialog.replace(
+      () => <CompanionOverlay api={api} companion={companion} sourceID={sourceID} />,
+      () => {
+        opened = undefined
+      },
+    )
+    opened = sourceID
   }
   api.keymap.registerLayer({
     commands: [

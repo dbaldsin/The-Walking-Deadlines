@@ -1181,8 +1181,8 @@ export function Session() {
         <SessionLayout>
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
             <Show when={dialog.splitWidth}>
-              <text fg={theme.accent} flexShrink={0} wrapMode="none">
-                <b>Coding agent</b>
+              <text fg={dialog.blocking ? theme.textMuted : theme.accent} flexShrink={0} wrapMode="none">
+                <b>{dialog.blocking ? "○" : "●"} Coding agent</b>
                 <span style={{ fg: theme.textMuted }}>
                   {" "}
                   · {Locale.truncate(session()?.title ?? "", Math.max(1, contentWidth() - 16))}

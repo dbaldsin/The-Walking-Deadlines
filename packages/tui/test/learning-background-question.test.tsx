@@ -103,7 +103,8 @@ test("a held coding question click keeps its layout until release and then retur
   expect(answers).toEqual([])
   await view.app.mockMouse.release(position.x, position.y)
   await view.flush()
-  expect(view.find("learning-input") === undefined).toBe(true)
+  expect(view.find("learning-input")).toBeDefined()
+  expect(view.dialog().blocking).toBe(false)
   await reply.promise
   expect(answers).toEqual([{ answers: [["Keep coding"]] }])
 })

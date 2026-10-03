@@ -93,6 +93,7 @@ for (const width of [80, 140])
           },
           dialog: {
             ...base.ui.dialog,
+            blocking: true,
             clear() {
               close++
             },

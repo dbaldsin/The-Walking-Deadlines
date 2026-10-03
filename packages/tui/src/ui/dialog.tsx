@@ -16,6 +16,8 @@ export function Dialog(
   props: ParentProps<{
     size?: "medium" | "large" | "xlarge" | "fullscreen" | "split"
     onClose: () => void
+    onFocus?: () => void
+    active?: boolean
   }>,
 ) {
   const dimensions = useTerminalDimensions()
@@ -56,6 +58,7 @@ export function Dialog(
       backgroundColor={split() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
+        onMouseDown={() => props.onFocus?.()}
         onMouseUp={(e: { stopPropagation(): void }) => {
           // A selection release must bubble up to the copy-on-select handler in
           // DialogProvider; the backdrop's dismiss flag keeps it from closing the dialog.
@@ -69,7 +72,7 @@ export function Dialog(
         backgroundColor={theme.backgroundPanel}
         paddingTop={full() ? 0 : 1}
         border={split() ? ["left"] : []}
-        borderColor={theme.borderActive}
+        borderColor={props.active === false ? theme.borderSubtle : theme.borderActive}
       >
         {props.children}
       </box>
@@ -84,14 +87,20 @@ function init() {
       onClose?: () => void
     }[],
     size: "medium" as "medium" | "large" | "xlarge" | "fullscreen" | "split",
+    focused: true,
   })
 
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const modeStack = useOpencodeModeStack()
+  const splitWidth = () => {
+    const width = dialogSplitWidth(dimensions().width)
+    return store.stack.length && store.size === "split" && width ? width + 1 : 0
+  }
+  const blocking = () => !!store.stack.length && (!splitWidth() || store.focused)
 
   createEffect(() => {
-    if (store.stack.length === 0) return
+    if (!blocking()) return
     const popMode = modeStack.push("modal")
     onCleanup(popMode)
   })
@@ -99,6 +108,7 @@ function init() {
   let focus: Renderable | null
   function refocus() {
     setTimeout(() => {
+      if (blocking()) return
       if (!focus) return
       if (focus.isDestroyed) return
       function find(item: Renderable) {
@@ -115,7 +125,7 @@ function init() {
   }
 
   useBindings(() => ({
-    enabled: store.stack.length > 0 && !renderer.getSelection()?.getSelectedText(),
+    enabled: blocking() && !renderer.getSelection()?.getSelectedText(),
     bindings: [
       {
         key: "escape",
@@ -156,6 +166,7 @@ function init() {
       batch(() => {
         setStore("size", "medium")
         setStore("stack", [])
+        setStore("focused", true)
       })
       refocus()
     },
@@ -168,6 +179,7 @@ function init() {
         if (item.onClose) item.onClose()
       }
       setStore("size", "medium")
+      setStore("focused", true)
       setStore("stack", [
         {
           element: input,
@@ -182,8 +194,18 @@ function init() {
       return store.size
     },
     get splitWidth() {
-      const width = dialogSplitWidth(dimensions().width)
-      return store.stack.length && store.size === "split" && width ? width + 1 : 0
+      return splitWidth()
+    },
+    get blocking() {
+      return blocking()
+    },
+    focus() {
+      setStore("focused", true)
+    },
+    blur() {
+      if (!splitWidth()) return
+      setStore("focused", false)
+      refocus()
     },
     setSize(size: "medium" | "large" | "xlarge" | "fullscreen" | "split") {
       setStore("size", size)
@@ -229,7 +251,7 @@ export function DialogProvider(props: ParentProps) {
         onMouseUp={!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size}>
+          <Dialog onClose={() => value.clear()} onFocus={() => value.focus()} active={value.blocking} size={value.size}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>

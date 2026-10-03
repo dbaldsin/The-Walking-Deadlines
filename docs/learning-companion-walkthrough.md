@@ -44,6 +44,8 @@ Passing CI and actual teammate approval remain required before merge. The reques
 
 ## October 3 split-view update
 
+This section records the first split-view revision. The later focus and Notebook update below supersedes its click-to-close behavior.
+
 Learn now defaults to a right-hand pane at terminal widths of **128 columns or more**, with the live coding conversation on the left. **Fullscreen / Split view** and **Alt+W** switch layouts; narrower terminals use fullscreen. Drafts survive layout changes. Notebook layout follows the companion pane's usable width, so split view shows the selected detail below its row; fullscreen can place list and detail beside each other.
 
 The separate **Coding** status exposes work, idle, retries, permission waits and question waits. Opening Learn does not stop coding; an agent can independently wait for a permission or question response. **Return to coding**, Close or Escape returns control; clicking the coding pane in split view also closes Learn, while scrolling it keeps Learn open. **Pause topics** affects automatic learning questions only.
@@ -57,3 +59,19 @@ The real-provider concurrency regression in `packages/opencode/test/session/prom
 The final updated focused TUI run passed **58 tests, 0 failures, 428 assertions across 9 files**, in approximately **7.89 seconds**. New coverage is in `packages/tui/test/learning-split.test.tsx`, `learning-activity.test.ts` and `learning-background-question.test.tsx`. It covers layout/resize/draft behavior, coding attention states, visually separate sections, exact-answer proposal review, and a real `QuestionPrompt` arriving while Learn is open. The question tests use the actual SDK client at a controlled HTTP boundary to detect unintended replies or rejects. A held mouse click renders between press and release: wrapped options stay in place, the intended answer is selected once, and Learn closes on release to restore coding control. The October 2 counts above describe that earlier run. Current-head CI will run remotely after push.
 
 The fresh VS Code app lookup, Raise and screenshot succeeded, showing the earlier runtime. Focusing the terminal then failed with `noWindowsAvailable`, so the existing demo was not restarted. **The new split-view native walkthrough and screenshots remain pending.** Complete it with one demo instance and optional integrations disabled: check coding updates beside Learn, switch to fullscreen and back, respond to a coding question, expand sources, use Notebook and inspect a proposal. Capture the resulting views and sample that worker's CPU/RSS during idle, scrolling and answering. Passing current-head CI and teammate approval remain merge gates.
+
+## October 3 focus and Notebook update
+
+**Shift+Tab** includes Learn at the wrap point in the coding agent cycle: **Build → Plan → Learn → Build** for the default agents. Opening Learn leaves the selected coding agent unchanged. Shift+Tab from Learn's Chat question input returns to the first coding agent. On buttons, Notebook and other editors, it retains reverse control navigation.
+
+Clicking coding or choosing **Focus coding** now keeps the split companion mounted and preserves both drafts. Clicking back into Learn restores its keyboard control. The active pane has a filled dot and active divider; the companion also labels **Typing here** versus **Visible**. **Close** still dismisses the pane. Narrow/fullscreen layouts remain modal and use **Return to coding** to close.
+
+Notebook now has command-center-style **All / Answers / Notes / Goals** filters with counts, compact rows with different coloured and labelled dots, saved dates and a full-row selection. Only the selected Markdown renders. At 100 usable columns it appears beside the list with a divider; smaller panes show the detail below its selected row. Switching from a long chat resets Notebook to its heading and first selected entry.
+
+### Agent exercise and verification
+
+An independent agent exercised the actual OpenTUI render and mouse/keyboard controls with controlled fixture data. Other agents reviewed the Notebook design and focus/shortcut code. Findings incorporated here include clearer type filters, a selected-entry divider, the clipped Notebook heading, delayed focus restoration after changing panes or resizing, and focus theft when an atomic notebook save finishes after the user returns to coding. Search, undo removal and independently scrolling wide list/detail panes were suggested as possible future improvements; they are not implemented in this revision.
+
+The final sequential focused run passed **80 tests, 0 failures, 563 assertions across 12 files**, in approximately **12.99 seconds**. New regressions use actual rendered controls at **80×24, 140×24 and 140×36**, and the actual keymap command implementation. They cover configured coding shortcuts, disabled/missing/child sessions, pane switching, unchanged drafts, late focus timers, saving while coding has focus, filtered stable selection, type-dot colours and dates, local saved-source expansion, one selected Markdown detail and responsive layouts. Held coding clicks still keep geometry stable and submit the intended answer once; Learn now remains visible afterward.
+
+No additional OpenCode instance or broad local typecheck was started. A resource snapshot of the user's existing worker was **165 MiB RSS** and approximately **10.1% CPU** as reported by `ps`; free disk space was approximately **334 MiB**. This snapshot does not measure the new UI during idle, scrolling or answering. Full checks run on GitHub. **The new native VS Code walkthrough and screenshots remain pending**, as does actual teammate approval before merge.

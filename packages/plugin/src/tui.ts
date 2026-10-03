@@ -128,10 +128,13 @@ export type TuiDialogProps = {
 export type TuiDialogStack = {
   replace: (render: () => JSX.Element, onClose?: () => void) => void
   clear: () => void
+  focus: () => void
+  blur: () => void
   setSize: (size: "medium" | "large" | "xlarge" | "fullscreen" | "split") => void
   readonly size: "medium" | "large" | "xlarge" | "fullscreen" | "split"
   readonly depth: number
   readonly open: boolean
+  readonly blocking: boolean
 }
 
 export type TuiDialogAlertProps = {

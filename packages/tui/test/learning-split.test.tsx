@@ -45,9 +45,12 @@ test("split and fullscreen switches and terminal resizing retain both drafts", a
   expect(view.input().plainText).toBe("unfinished learning question")
   expect(view.main().plainText).toBe("unsent coding draft")
   await view.click("learning-return")
-  expect(view.find("learning-overlay")).toBeUndefined()
+  expect(view.find("learning-overlay")).toBeDefined()
+  expect(view.dialog().blocking).toBe(false)
   await Bun.sleep(10)
   expect(view.app.renderer.currentFocusedRenderable === view.main()).toBe(true)
+  await view.click("learning-close")
+  expect(view.find("learning-overlay")).toBeUndefined()
 })
 
 test("coding status exposes permission and question waits even in narrow fullscreen view", async () => {

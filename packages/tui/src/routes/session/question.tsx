@@ -128,19 +128,19 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
   }
 
   createEffect(() => {
-    if (dialog.stack.length) return
+    if (dialog.blocking) return
     const popMode = modeStack.push(QUESTION_MODE)
     onCleanup(popMode)
   })
 
   createEffect(() => {
-    if (dialog.stack.length || !store.editing || !textarea || textarea.isDestroyed) return
+    if (dialog.blocking || !store.editing || !textarea || textarea.isDestroyed) return
     textarea.focus()
   })
 
   useBindings(() => ({
     mode: QUESTION_MODE,
-    enabled: !dialog.stack.length && store.editing && !confirm(),
+    enabled: !dialog.blocking && store.editing && !confirm(),
     commands: [
       {
         name: "prompt.clear",
@@ -221,7 +221,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
 
     return {
       mode: QUESTION_MODE,
-      enabled: !dialog.stack.length && !store.editing,
+      enabled: !dialog.blocking && !store.editing,
       commands: [
         {
           name: "app.exit",
@@ -437,7 +437,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                           textarea = val
                           val.traits = { status: "ANSWER" }
                           queueMicrotask(() => {
-                            if (dialog.stack.length || val.isDestroyed) return
+                            if (dialog.blocking || val.isDestroyed) return
                             val.focus()
                             val.gotoLineEnd()
                           })

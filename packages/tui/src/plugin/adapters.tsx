@@ -272,6 +272,15 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
         clear() {
           input.dialog.clear()
         },
+        focus() {
+          input.dialog.focus()
+        },
+        blur() {
+          input.dialog.blur()
+        },
+        get blocking() {
+          return input.dialog.blocking
+        },
         setSize(size) {
           input.dialog.setSize(size)
         },

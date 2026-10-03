@@ -12,9 +12,9 @@ import type { Learning } from "../../src/feature-plugins/learning/data"
 import { KVProvider } from "../../src/context/kv"
 import { ThemeProvider, useTheme } from "../../src/context/theme"
 import { TuiConfigProvider } from "../../src/config"
-import { OpencodeKeymapProvider, registerOpencodeKeymap } from "../../src/keymap"
-import { DialogProvider, useDialog } from "../../src/ui/dialog"
-import { ToastProvider } from "../../src/ui/toast"
+import { OpencodeKeymapProvider, registerOpencodeKeymap, useOpencodeKeymap, type OpenTuiKeymap } from "../../src/keymap"
+import { DialogProvider, useDialog, type DialogContext } from "../../src/ui/dialog"
+import { ToastProvider, useToast } from "../../src/ui/toast"
 import { TestTuiContexts } from "./tui-environment"
 import { createTuiPluginApi } from "./tui-plugin"
 import { createTuiResolvedConfig } from "./tui-runtime"
@@ -53,7 +53,7 @@ export async function learningView(
   initial: Partial<CompanionRecord> = {},
   mode: "dark" | "light" = "dark",
   title = "Calculator demo",
-  options: { fetch?: typeof globalThis.fetch } = {},
+  options: { fetch?: typeof globalThis.fetch; add?: () => Promise<void> } = {},
 ) {
   await Bun.write(`${directory}/kv.json`, "{}")
   const [records, set] = createStore<Record<string, CompanionRecord>>({
@@ -71,6 +71,8 @@ export async function learningView(
   const sent: string[] = []
   const removed: string[] = []
   let main: TextareaRenderable | undefined
+  let paneDialog: DialogContext | undefined
+  let paneKeymap: OpenTuiKeymap | undefined
   const companion = {
     records,
     load: async () => {},
@@ -78,7 +80,7 @@ export async function learningView(
       asked.push({ question, presentation })
     },
     save: async () => {},
-    add: async () => {},
+    add: options.add ?? (async () => {}),
     remove: async (_id: string, entryID: string) => {
       removed.push(entryID)
     },
@@ -93,8 +95,11 @@ export async function learningView(
   } as unknown as ReturnType<typeof createCompanion>
   function Control() {
     const dialog = useDialog()
+    paneDialog = dialog
+    paneKeymap = useOpencodeKeymap()
     const theme = useTheme()
-    const base = createTuiPluginApi()
+    const toast = useToast()
+    const base = createTuiPluginApi({ keymap: useOpencodeKeymap() })
     const api = {
       ...base,
       theme: {
@@ -107,7 +112,7 @@ export async function learningView(
           return { name: "session", params: { sessionID: session() } }
         },
       },
-      ui: { ...base.ui, dialog },
+      ui: { ...base.ui, dialog, toast: (options: Parameters<typeof toast.show>[0]) => toast.show(options) },
       state: {
         ...base.state,
         session: {
@@ -213,6 +218,8 @@ export async function learningView(
     sent,
     removed,
     main: () => main!,
+    dialog: () => paneDialog!,
+    keymap: () => paneKeymap!,
     input: () => find("learning-input") as TextareaRenderable,
     find,
     async click(id: string) {

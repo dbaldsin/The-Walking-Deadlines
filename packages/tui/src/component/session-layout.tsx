@@ -14,7 +14,7 @@ export function SessionLayout(props: ParentProps) {
         pressed = dialog.splitWidth ? dialog.stack.at(-1) : undefined
       }}
       onMouseUp={() => {
-        if (pressed && dialog.splitWidth && pressed === dialog.stack.at(-1)) dialog.clear()
+        if (pressed && dialog.splitWidth && pressed === dialog.stack.at(-1)) dialog.blur()
         pressed = undefined
       }}
     >

@@ -265,6 +265,11 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
       Prompt: () => null,
       toast: () => {},
       dialog: {
+        focus: () => {},
+        blur: () => {},
+        get blocking() {
+          return depth > 0
+        },
         replace: () => {
           depth = 1
         },

@@ -634,7 +634,7 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.visible === false || dialog.stack.length > 0) {
+    if (props.visible === false || dialog.blocking) {
       if (input.focused) input.blur()
       return
     }
