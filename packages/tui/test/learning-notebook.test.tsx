@@ -61,6 +61,7 @@ test("Notebook command-center rows show distinct dots, readable titles, dates an
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 140, 36, { entries })
   await view.click("learning-notebook")
+  await view.click("learning-options")
   await view.click("learning-layout")
   const list = view.find("notebook-list")!
   const selected = view.find("notebook-entry-answer") as BoxRenderable
@@ -138,7 +139,7 @@ test("Notebook selection follows stable entry IDs through filters, reordering an
   await view.flush()
   expect(view.app.captureCharFrame()).toContain("No goals yet")
   expect(view.find("notebook-detail")).toBeUndefined()
-  expect(view.find("learning-add-goal")).toBeDefined()
+  expect(view.find("learning-add")).toBeDefined()
 })
 
 test("Notebook adapts from 80×24 inline detail to a divided fullscreen list and detail", async () => {
@@ -146,14 +147,15 @@ test("Notebook adapts from 80×24 inline detail to a divided fullscreen list and
   await using view = await learningView(tmp.path, 80, 24, { entries })
   await view.click("learning-notebook")
   expect(view.find("notebook-detail")!.parent?.id).toBe("notebook-row-answer")
-  for (const id of ["learning-input", "learning-add-note", "learning-add-goal"]) {
+  for (const id of ["learning-add"]) {
     const control = view.find(id)!
     expect(control.y + control.height).toBeLessThanOrEqual(23)
   }
-  expect(view.input().height).toBe(3)
+  expect(view.find("learning-composer")!.visible).toBe(false)
   view.app.renderer.resize(140, 36)
   await view.flush()
   expect(view.find("notebook-detail")!.parent?.id).toBe("notebook-row-answer")
+  await view.click("learning-options")
   await view.click("learning-layout")
   const list = view.find("notebook-list")!
   const selected = view.find("notebook-detail")!

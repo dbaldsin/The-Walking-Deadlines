@@ -18,7 +18,7 @@ for (const height of [24, 36])
     expect(view.app.captureCharFrame()).toContain("CODING TEST FINISHED")
     expect(view.input().plainText).toBe("why this change?")
     expect(view.main().plainText).toBe("unsent coding draft")
-    for (const id of ["learning-input", "learning-layout", "learning-close", "learning-send"]) {
+    for (const id of ["learning-input", "learning-options", "learning-close", "learning-actions"]) {
       const item = view.find(id)!
       expect(item.x + item.width).toBeLessThanOrEqual(139)
       expect(item.y + item.height).toBeLessThanOrEqual(height - 1)
@@ -30,9 +30,11 @@ test("split and fullscreen switches and terminal resizing retain both drafts", a
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 140, 36)
   view.input().setText("unfinished learning question")
+  await view.click("learning-options")
   await view.click("learning-layout")
   expect(view.find("learning-overlay")!.width).toBe(138)
   expect(view.input().plainText).toBe("unfinished learning question")
+  await view.click("learning-options")
   await view.click("learning-layout")
   expect(view.find("learning-overlay")!.width).toBeLessThanOrEqual(70)
   view.app.renderer.resize(80, 24)
@@ -44,6 +46,7 @@ test("split and fullscreen switches and terminal resizing retain both drafts", a
   expect(view.find("learning-overlay")!.width).toBeLessThanOrEqual(70)
   expect(view.input().plainText).toBe("unfinished learning question")
   expect(view.main().plainText).toBe("unsent coding draft")
+  await view.click("learning-options")
   await view.click("learning-return")
   expect(view.find("learning-overlay")).toBeDefined()
   expect(view.dialog().blocking).toBe(false)
@@ -56,6 +59,8 @@ test("split and fullscreen switches and terminal resizing retain both drafts", a
 test("coding status exposes permission and question waits even in narrow fullscreen view", async () => {
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 80, 24)
+  expect(view.app.captureCharFrame()).not.toContain("Coding:")
+  await view.click("learning-options")
   expect(view.app.captureCharFrame()).toContain("Coding: Working")
   view.setCoding("permission", true)
   await view.flush()
@@ -79,7 +84,7 @@ test("explanation, proposed improvement and quiet learning topic have distinct s
   const body = view.find("learning-body") as ScrollBoxRenderable
   body.scrollTo(0)
   await view.flush()
-  expect(view.app.captureCharFrame()).toContain("Explanation")
+  expect(view.app.captureCharFrame()).toContain("Companion")
   expect(view.app.captureCharFrame()).toContain("Suggested improvement")
   expect(view.app.captureCharFrame()).toContain("Add a negative-input test")
   expect(view.app.captureCharFrame()).toContain("Learning topic")

@@ -321,7 +321,7 @@ export function createCompanion(api: TuiPluginApi) {
           variant: model.variant ?? "default",
           system: `${mentor}${previous ? " This is a follow-up on an immutable snapshot. Use its supplied evidence and notes; do not look up current files." : ""}`,
           tools: { read: !previous, glob: !previous, grep: !previous },
-          format: Learning.format,
+          format: role === "topics" ? Learning.topicFormat : Learning.format,
           parts: [
             { type: "text", text: context.question, metadata: { "learning.context": context } },
             {

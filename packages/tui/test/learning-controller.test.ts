@@ -333,6 +333,12 @@ test("topics cannot block questions; pause and disposal stop only companion chil
   expect(f.companion.records["source-a"].turns).toHaveLength(1)
   expect(f.prompts).toHaveLength(2)
   expect(f.prompts[0].sessionID).not.toBe(f.prompts[1].sessionID)
+  const topicFormat = f.prompts[0].format as typeof Learning.format
+  const chatFormat = f.prompts[1].format as typeof Learning.format
+  expect(topicFormat.schema.properties.explanation.description).toContain("single question")
+  expect(topicFormat.schema.properties.explanation.description).not.toContain("The idea")
+  expect(chatFormat.schema.properties.explanation.description).toContain("The idea")
+  expect(chatFormat.schema.properties.explanation.description).toContain("labelled")
   f.companion.pause("source-a", true)
   await topic
   expect(f.companion.records["source-a"].topic).toBeUndefined()

@@ -27,7 +27,7 @@ export function Notebook(props: {
   Action: (action: NotebookAction) => JSX.Element
   Evidence: (evidence: { evidence: Learning.Evidence[]; prefix: string }) => JSX.Element
   focusInput: () => void
-  remove: (id: string) => void
+  actions: () => void
   ref: (handle: NotebookHandle) => void
 }) {
   const [filter, setFilter] = createSignal<"all" | Learning.Entry["kind"]>("all")
@@ -89,7 +89,7 @@ export function Notebook(props: {
             id="notebook-detail"
             flexGrow={1}
             minWidth={1}
-            maxWidth={84}
+            maxWidth={72}
             marginTop={wide() ? 0 : 1}
             marginBottom={wide() ? 0 : 1}
             paddingLeft={1}
@@ -122,12 +122,7 @@ export function Notebook(props: {
               </box>
             </Show>
             <box marginTop={1}>
-              <props.Action
-                id="notebook-remove"
-                label="Remove entry"
-                hint="Ctrl+D"
-                run={() => props.remove(entry().id)}
-              />
+              <props.Action id="notebook-actions" label="Actions" run={props.actions} />
             </box>
           </box>
         )}

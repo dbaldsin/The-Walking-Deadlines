@@ -86,7 +86,7 @@ export namespace Learning {
         explanation: {
           type: "string",
           description:
-            "3–5 short plain-language sentences. Label observed facts, possible explanations and suggestions. Acknowledge missing evidence.",
+            "Readable Markdown: start with **The idea** and a one-sentence takeaway, then 2–3 short labelled bullet points suited to the question (for example What changed, Why it matters, Verified). Default to 3–5 short plain-language sentences overall. Label uncertainty and suggestions; acknowledge missing evidence. Include code or longer detail only when the user asks for an example or a deeper explanation.",
         },
         evidence: { type: "array", items: { type: "string" }, description: "IDs of supplied evidence actually used." },
         notes: {
@@ -101,6 +101,21 @@ export namespace Learning {
         },
       },
       required: ["explanation", "evidence", "notes", "instruction"],
+    },
+  }
+
+  export const topicFormat = {
+    ...format,
+    schema: {
+      ...format.schema,
+      properties: {
+        ...format.schema.properties,
+        explanation: {
+          type: "string",
+          description:
+            "One brief, specific single question about the completed change, or NO_TOPIC. No headings or explanation.",
+        },
+      },
     },
   }
 

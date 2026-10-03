@@ -85,3 +85,27 @@ The existing demo's **Try the learning companion** VS Code task now runs through
 A follow-up resource sample while OpenCode was stopped showed approximately **7.5 GiB swap used**, **2.0 GiB free disk** and **31% system-wide memory free**. The reclaimed cache sizes above remain valid; available disk space changes as the system's swap use changes. No claim is made that cache cleanup eliminated the system-wide pressure.
 
 The final lifecycle review also found that a notebook save completing after Learn closed or its source session changed could read the destroyed composer and show a false **EditBuffer is destroyed** error after **Saved**. A live-input guard fixes that JavaScript exception. Both new regression cases failed before the guard and passed afterward; the focused pane suite passed **7 tests, 41 assertions**, approximately **3.72 seconds**. This is a UI error fix, not evidence about the cause of the Mac's freezes. The full remote CI suite must pass on the final commit.
+
+## October 3 minimal controls and readable answers
+
+The header now combines identity and labelled status with **Options** and **Close**, followed by Chat/Notebook tabs. **Options** groups layout, pause/resume, coding status/focus and shortcut help. The latest-answer row keeps **Simpler / Example / Actions**; **Actions** contains Go deeper, Save and conditional Update. Menus are local disclosures: opening them makes no model request, Escape dismisses them before Learn, and clicking coding closes menus while preserving the split pane and both drafts.
+
+New interactive answers request **The idea**, followed by two or three short labelled points. The default is three to five short sentences, with uncertainty and unavailable evidence identified. Examples and deeper answers may include code. The Markdown reply shape is unchanged, historical explanations and notes are preserved, and automatic topics use their own single-question formatting instruction. Conversation reading width is capped at 72 columns. Notebook browsing hides the composer, uses **Add → Note / Goal**, and places removal in the selected entry's **Actions**.
+
+Independent review identified the hidden composer button remaining in Tab navigation and focus restoration. Regression tests reproduced both failures, then passed after hidden ancestors were excluded and hidden composer activation guarded. A separate regression reproduced shortcut help focusing a button below its scroll viewport; opening help now focuses the visible menu viewport. Existing late-save disposal, cancellation, immutable sources, session-switching and exact steering-delivery tests remain covered.
+
+### Rendered screenshots
+
+These are captures of the actual OpenTUI component with controlled calculator fixture data, converted from its cell colours and text to PNG. They demonstrate layout; they are **not native VS Code screenshots or live model responses**.
+
+![Chat at 80×24](images/learning-minimal-chat.png)
+
+![Coding and learning split view at 140×24](images/learning-minimal-split.png)
+
+![Fullscreen Notebook at 140×36](images/learning-minimal-notebook.png)
+
+### Resource sampling and native walkthrough status
+
+The 8GB Mac reported **26% system-wide free memory** before work and **27%** during and after the sequential focused checks. One sampled test process used **281 MiB RSS** and **144% CPU** as reported by `ps` (multiple cores); it ran through `nice -n 10`. No broad local typecheck, concurrent test suite or additional OpenCode instance was launched. These samples do not establish idle, scrolling or answering costs for the new companion.
+
+VS Code's existing demo was stopped before restart. Native control could inspect the window and send exit keys, but restarting in its terminal failed with **`noWindowsAvailable`**. Its accessibility/screenshot observations also remained stale between actions. No Bun demo process remained in the final process check. **The new native VS Code walkthrough and idle/scrolling/answering samples remain pending.** Start the existing **Try the learning companion** task manually, with its low priority, single-instance limit, `--pure` and optional integrations disabled. Verify a new structured answer, Example, Save, Notebook editing, sources, split focus, Escape menus and approved steering; capture native screenshots. Current-head CI and actual teammate approval remain merge gates.

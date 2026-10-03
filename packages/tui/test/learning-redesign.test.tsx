@@ -15,7 +15,7 @@ for (const [width, height] of [
     const frame = view.app.captureCharFrame()
     expect(frame).toContain("Sources · 1")
     expect(frame).not.toContain("2 passes; 0 failures")
-    for (const id of ["learning-input", "learning-simpler", "learning-send"]) {
+    for (const id of ["learning-input", "learning-simpler", "learning-actions"]) {
       const item = view.find(id)!
       expect(item).toBeDefined()
       expect(item.y + item.height).toBeLessThanOrEqual(height - 1)
@@ -41,7 +41,7 @@ test("follow-up actions use short presentation labels and remain unavailable whi
   expect(view.app.captureCharFrame()).toContain("Thinking")
   await view.click("learning-simpler")
   expect(view.asked).toHaveLength(1)
-  await view.click("learning-cancel")
+  await view.click("learning-ask")
   expect(view.records.source.busy).toBe(false)
 })
 
@@ -49,14 +49,16 @@ test("preview preserves companion and coding drafts, and sends only on explicit 
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 80, 24)
   view.input().setText("my unfinished question")
-  await view.click("learning-send")
+  view.app.mockInput.pressKey("g", { ctrl: true })
+  await view.flush()
   expect(view.app.captureCharFrame()).toContain("Calculator demo")
   expect(view.app.captureCharFrame()).toContain("source")
   expect(view.sent).toHaveLength(0)
   view.input().setText("Exact instruction\nwith a second line.")
   await view.click("learning-back")
   expect(view.input().plainText).toBe("my unfinished question")
-  await view.click("learning-send")
+  view.app.mockInput.pressKey("g", { ctrl: true })
+  await view.flush()
   view.input().setText("Exact approved instruction\nwith a second line.")
   await view.click("learning-approve")
   expect(view.sent).toEqual(["Exact approved instruction\nwith a second line."])
@@ -114,7 +116,7 @@ test("Notebook mounts one selected detail and adapts when the terminal is resize
   view.app.renderer.resize(80, 24)
   await view.flush()
   expect(view.find("notebook-detail")!.parent?.id).toBe("notebook-row-two")
-  expect(view.find("learning-input")!.y + view.input().height).toBeLessThanOrEqual(23)
+  expect(view.find("learning-composer")!.visible).toBe(false)
 })
 
 test("errors, paused topics and uncertain delivery stay readable in a light theme", async () => {
@@ -156,20 +158,14 @@ for (const [width, height] of [
     turn.evidence[0].text = "ORIGINAL TEST EVIDENCE\n" + "unchanged result\n".repeat(80)
     const title = "Calculator regression verification with boundary input coverage and a long destination title"
     await using view = await learningView(tmp.path, width, height, { turns: [turn] }, "dark", title)
-    for (const id of [
-      "learning-input",
-      "learning-simpler",
-      "learning-example",
-      "learning-more",
-      "learning-save",
-      "learning-send",
-    ]) {
+    for (const id of ["learning-input", "learning-simpler", "learning-example", "learning-actions"]) {
       const item = view.find(id)!
       expect(item.y + item.height).toBeLessThanOrEqual(height - 1)
       expect(item.x + item.width).toBeLessThanOrEqual(width - 1)
     }
-    expect(view.find("answer-turn-0")!.width).toBeLessThanOrEqual(84)
-    await view.click("learning-send")
+    expect(view.find("answer-turn-0")!.width).toBeLessThanOrEqual(72)
+    view.app.mockInput.pressKey("g", { ctrl: true })
+    await view.flush()
     const destination = view.find("learning-destination")!
     const lines = view.app.captureCharFrame().split("\n")
     expect(
@@ -194,6 +190,7 @@ test("returning to Chat exits note and goal modes and restores the question draf
   for (const id of ["learning-add-note", "learning-add-goal"]) {
     view.input().setText("unfinished companion question")
     await view.click("learning-notebook")
+    await view.click("learning-add")
     await view.click(id)
     view.input().setText("private entry draft")
     await view.click("learning-chat")
@@ -248,6 +245,7 @@ test("Notebook keyboard actions survive backward selection and a wide-to-narrow 
   await view.click("learning-notebook")
   await view.click("notebook-entry-two")
   await view.click("notebook-entry-one")
+  await view.click("notebook-actions")
   view.find("notebook-remove")!.focus()
   view.app.mockInput.pressEnter()
   await view.flush()
@@ -256,6 +254,7 @@ test("Notebook keyboard actions survive backward selection and a wide-to-narrow 
   await view.flush()
   view.app.renderer.resize(80, 36)
   await view.flush()
+  await view.click("notebook-actions")
   view.find("notebook-remove")!.focus()
   view.app.mockInput.pressEnter()
   await view.flush()
@@ -266,7 +265,8 @@ test("steering editor pages long instructions without sending or changing either
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 80, 24)
   view.input().setText("unfinished question")
-  await view.click("learning-send")
+  view.app.mockInput.pressKey("g", { ctrl: true })
+  await view.flush()
   const instruction = "Exact instruction line.\n".repeat(70)
   view.input().setText(instruction)
   view.input().gotoBufferHome()
