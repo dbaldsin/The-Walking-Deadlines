@@ -123,6 +123,9 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
       get(sessionID) {
         return sync.session.get(sessionID)
       },
+      children(sessionID) {
+        return sync.data.session.filter((session) => session.parentID === sessionID)
+      },
       diff(sessionID) {
         return (sync.data.session_diff[sessionID] ?? []).flatMap((item) =>
           item.file === undefined ? [] : [{ ...item, file: item.file }],
@@ -268,6 +271,15 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
         },
         clear() {
           input.dialog.clear()
+        },
+        focus() {
+          input.dialog.focus()
+        },
+        blur() {
+          input.dialog.blur()
+        },
+        get blocking() {
+          return input.dialog.blocking
         },
         setSize(size) {
           input.dialog.setSize(size)

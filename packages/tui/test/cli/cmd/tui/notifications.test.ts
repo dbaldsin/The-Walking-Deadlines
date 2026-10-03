@@ -22,6 +22,10 @@ async function setup() {
     subagent: session("subagent", "Subagent session", "session"),
     abort: session("abort", "Abort session"),
     timeout: session("timeout", "Timeout session"),
+    learning: {
+      ...session("learning", "Learning companion", "session"),
+      metadata: { "learning.role": "chat", "learning.source": "session" },
+    },
   }
 
   await Notifications.tui(
@@ -98,6 +102,20 @@ const permissionNotification: TuiAttentionNotifyInput = {
 }
 
 describe("internal notifications TUI plugin", () => {
+  test("companion children produce no completion sound or notification", async () => {
+    const harness = await setup()
+    harness.emit({
+      id: "learning-busy",
+      type: "session.status",
+      properties: { sessionID: "learning", status: { type: "busy" } },
+    })
+    harness.emit({
+      id: "learning-idle",
+      type: "session.status",
+      properties: { sessionID: "learning", status: { type: "idle" } },
+    })
+    expect(harness.notifications).toEqual([])
+  })
   test("notifies for question and permission requests with blurred notifications and always-on sounds", async () => {
     const harness = await setup()
 

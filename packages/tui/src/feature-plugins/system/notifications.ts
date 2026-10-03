@@ -1,6 +1,7 @@
 import type { Event } from "@opencode-ai/sdk/v2"
 import type { TuiAttentionSoundName, TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
+import { isLearningSession } from "../../util/session"
 
 const id = "internal:notifications"
 
@@ -8,6 +9,7 @@ type SessionError = Extract<Event, { type: "session.error" }>["properties"]["err
 
 function notify(api: TuiPluginApi, sessionID: string | undefined, message: string, sound: TuiAttentionSoundName) {
   const session = sessionID ? api.state.session.get(sessionID) : undefined
+  if (isLearningSession(session)) return
   const isSubagent = session?.parentID !== undefined
   void api.attention.notify({
     title: session?.title,

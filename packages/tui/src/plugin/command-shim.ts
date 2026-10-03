@@ -25,6 +25,15 @@ function createCommandShimDialog(dialog: CommandShimDialog): LegacyDialog {
     clear() {
       dialog.clear()
     },
+    focus() {
+      dialog.focus()
+    },
+    blur() {
+      dialog.blur()
+    },
+    get blocking() {
+      return dialog.blocking
+    },
     setSize(size) {
       dialog.setSize(size)
     },

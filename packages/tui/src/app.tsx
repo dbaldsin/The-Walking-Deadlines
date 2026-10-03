@@ -86,6 +86,7 @@ import * as TuiAudio from "./audio"
 import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
+import { agentCycleCommands } from "./agent-cycle"
 
 registerOpencodeSpinner()
 
@@ -726,15 +727,17 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
           dialog.replace(() => <DialogVariant />)
         },
       },
-      {
-        name: "agent.cycle.reverse",
-        title: "Agent cycle reverse",
-        category: "Agent",
-        hidden: true,
-        run: () => {
-          local.agent.move(-1)
+      ...agentCycleCommands({
+        agent: local.agent,
+        source: () => {
+          const current = route.data
+          return current.type === "session"
+            ? sync.data.session.find((session) => session.id === current.sessionID)
+            : undefined
         },
-      },
+        keymap,
+        dialog,
+      }),
       {
         name: "provider.connect",
         title: "Connect provider",

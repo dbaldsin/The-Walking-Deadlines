@@ -9,6 +9,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
+import { Agent } from "@/agent/agent"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -98,13 +99,14 @@ export const ReadTool = Tool.define<
       return yield* Effect.fail(new Error(`File not found: ${filepath}`))
     })
 
-    const list = Effect.fn("ReadTool.list")(function* (filepath: string) {
+    const list = Effect.fn("ReadTool.list")(function* (filepath: string, learning: boolean) {
       const items = yield* fs.readDirectoryEntries(filepath)
       return yield* Effect.forEach(
         items,
         Effect.fnUntraced(function* (item) {
           if (item.type === "directory") return item.name + "/"
           if (item.type !== "symlink") return item.name
+          if (learning) return item.name
 
           const target = yield* fs.stat(path.join(filepath, item.name)).pipe(Effect.catch(() => Effect.void))
           if (target?.type === "Directory") return item.name + "/"
@@ -231,6 +233,7 @@ export const ReadTool = Tool.define<
       ctx: Tool.Context<Metadata>,
     ) {
       const instance = yield* InstanceState.context
+      const learning = ctx.agent === Agent.LEARNING_COMPANION
       let filepath = params.filePath
       if (!path.isAbsolute(filepath)) {
         filepath = path.resolve(instance.directory, filepath)
@@ -262,7 +265,7 @@ export const ReadTool = Tool.define<
       if (!stat) return yield* miss(filepath)
 
       if (stat.type === "Directory") {
-        const items = yield* list(filepath)
+        const items = yield* list(filepath, learning)
         const limit = params.limit ?? DEFAULT_READ_LIMIT
         const offset = params.offset || 1
         const start = offset - 1
@@ -297,7 +300,7 @@ export const ReadTool = Tool.define<
         }
       }
 
-      const loaded = yield* instruction.resolve(ctx.messages, filepath, ctx.messageID)
+      const loaded = learning ? [] : yield* instruction.resolve(ctx.messages, filepath, ctx.messageID)
       const sample = yield* readSample(filepath, Number(stat.size), SAMPLE_BYTES)
 
       const mime = sniffAttachmentMime(sample, FSUtil.mimeType(filepath))
@@ -350,7 +353,7 @@ export const ReadTool = Tool.define<
       }
       output += "\n</content>"
 
-      yield* warm(filepath)
+      if (!learning) yield* warm(filepath)
 
       if (loaded.length > 0) {
         output += `\n\n<system-reminder>\n${loaded.map((item) => item.content).join("\n\n")}\n</system-reminder>`
