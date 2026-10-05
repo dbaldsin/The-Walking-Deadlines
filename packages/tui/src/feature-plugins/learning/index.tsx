@@ -369,7 +369,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
         desc: "Coding mode / previous companion control",
         cmd: () => {
           if (
-            props.api.kv.get("learning.agent-cycle", false) === true &&
+            props.api.kv.get<boolean>("learning.agent-cycle", false) === true &&
             tab() === "chat" &&
             editor() === "question" &&
             renderer.currentFocusedRenderable === target() &&
