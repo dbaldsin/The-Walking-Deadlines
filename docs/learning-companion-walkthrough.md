@@ -119,3 +119,9 @@ Sequential low-priority backend checks: **90 pass, 1 existing skip, 0 fail** acr
 The native VS Code demo started with `--pure`, optional MCP integrations disabled, and `nice -n 10`. One runtime sample was **1.6% CPU / 426800 KiB RSS** while idle, and system free memory before the demo was **49%**. These are snapshots, not performance guarantees. The native AX window title changed from zsh to bun, but screenshot observations continued showing the pre-launch shell while the process was running. Because the new UI could not be visually verified, the walkthrough gate remains **pending**. The owned demo was exited; no extra demo instance was left running.
 
 Final focused TUI rerun after correcting the opt-in fixture: **96 passed, 0 failed**, 714 assertions across 13 files (18.84 seconds). Remote typechecking then identified a literal-inference error in the new preference check; the check now explicitly reads a boolean. Final remote CI must still pass.
+
+## October 6 native retry and merge status (Qatar time)
+
+PR #32 was merged after Sangyoon’s approval and passing unit, typecheck and smoke checks. PR #33 now targets main; it still needs approval. PR #30 still needs re-review.
+
+The native VS Code retry could capture the demo shell, but launching the existing low-priority command returned `noWindowsAvailable`. No new demo process was started. The native UI walkthrough and idle/scroll/answer resource samples remain pending; this attempt does not satisfy that gate. System free memory before the retry was 42%, with 6.3 GiB available on the Data volume. No broad tests, builds or extra demo instances were run concurrently.
