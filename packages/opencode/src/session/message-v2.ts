@@ -34,7 +34,7 @@ import { errorMessage } from "@/util/error"
 import { isMedia } from "@/util/media"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Option } from "effect"
 
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
 interface FetchDecompressionError extends Error {
@@ -67,6 +67,7 @@ const Cursor = Schema.Struct({
 type Cursor = typeof Cursor.Type
 
 const decodeCursor = Schema.decodeUnknownSync(Cursor)
+const decodeFormat = Schema.decodeUnknownOption(SessionV1.Format)
 
 export const cursor = {
   encode(input: Cursor) {
@@ -77,12 +78,16 @@ export const cursor = {
   },
 }
 
-const info = (row: typeof MessageTable.$inferSelect) =>
-  ({
+const info = (row: typeof MessageTable.$inferSelect) => {
+  const result = {
     ...row.data,
     id: row.id,
     sessionID: row.session_id,
-  }) as Info
+  } as Info
+  // Database JSON loses Schema.Class prototypes required by the HTTP encoder.
+  if (result.role === "user" && result.format) result.format = Option.getOrUndefined(decodeFormat(result.format))
+  return result
+}
 
 const part = (row: typeof PartTable.$inferSelect) =>
   ({

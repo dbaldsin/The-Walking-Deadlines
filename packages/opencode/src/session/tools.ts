@@ -23,6 +23,9 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import path from "path"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { InstanceState } from "@/effect/instance-state"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -55,6 +58,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
+  const fs = yield* FSUtil.Service
+  const learning = input.agent.name === Agent.LEARNING_COMPANION || Agent.isLearningSession(input.session)
+  const agents = yield* Agent.Service
+  const agent = learning ? yield* agents.get(Agent.LEARNING_COMPANION) : input.agent
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
@@ -62,7 +69,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     messageID: input.processor.message.id,
     callID: options.toolCallId,
     extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
-    agent: input.agent.name,
+    agent: agent.name,
     messages: input.messages,
     metadata: (val) =>
       input.processor.updateToolCall(options.toolCallId, (match) => {
@@ -79,20 +86,31 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }
       }),
     ask: (req) =>
-      permission
-        .ask({
-          ...req,
-          sessionID: input.session.id,
-          tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
-        })
-        .pipe(Effect.orDie),
+      learning
+        ? Effect.sync(() => {
+            if (
+              !["read", "glob", "grep"].includes(req.permission) ||
+              req.patterns.some(
+                (pattern) => Permission.evaluate(req.permission, pattern, agent.permission).action !== "allow",
+              )
+            ) {
+              throw new Error("This lookup is not available to the learning companion.")
+            }
+          })
+        : permission
+            .ask({
+              ...req,
+              sessionID: input.session.id,
+              tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+              ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+            })
+            .pipe(Effect.orDie),
   })
 
   for (const item of yield* registry.tools({
     modelID: ModelV2.ID.make(input.model.api.id),
     providerID: input.model.providerID,
-    agent: input.agent,
+    agent,
     permission: input.session.permission,
   })) {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
@@ -108,6 +126,35 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },
             )
+            if (learning) {
+              const instance = yield* InstanceState.context
+              const root = yield* fs
+                .realPath(instance.worktree === "/" ? instance.directory : instance.worktree)
+                .pipe(Effect.orDie)
+              const requested = item.id === "read" ? args.filePath : (args.path ?? instance.directory)
+              if (typeof requested !== "string") throw new Error("A project path is required for this lookup.")
+              const requestedPath = path.resolve(instance.directory, requested)
+              // Missing files keep Read's useful suggestions; the existing ancestor still enforces the boundary.
+              const canonical = (target: string): Effect.Effect<string> =>
+                fs.realPath(target).pipe(
+                  Effect.catchReason("PlatformError", "NotFound", () =>
+                    target === path.dirname(target)
+                      ? Effect.die(new Error("Cannot resolve project lookup path"))
+                      : canonical(path.dirname(target)).pipe(
+                          Effect.map((parent) => path.join(parent, path.basename(target))),
+                        ),
+                  ),
+                  Effect.orDie,
+                )
+              const target = yield* canonical(requestedPath)
+              const relative = path.relative(root, target)
+              if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
+                throw new Error("Learning companion lookup exceeds the project boundary.")
+              }
+              // Execute using the canonical path after hooks, so a symlink cannot escape the check.
+              if (item.id === "read") args.filePath = target
+              else args.path = target
+            }
             const result = yield* item.execute(args, ctx)
             const output = {
               ...result,
@@ -132,6 +179,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       },
     })
   }
+
+  if (learning) return tools
 
   const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
     (client) => !!client.getServerCapabilities()?.resources,

@@ -634,7 +634,15 @@ const layer = Layer.effect(
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
-      const agentName = input.agent
+      const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const learning = Agent.isLearningSession(current) || input.agent === Agent.LEARNING_COMPANION
+      if (
+        learning &&
+        (input.parts.some((part) => part.type !== "text") || (input.agent && input.agent !== Agent.LEARNING_COMPANION))
+      ) {
+        throw new Error("The learning companion accepts only text questions and cannot switch agents.")
+      }
+      const agentName = learning ? Agent.LEARNING_COMPANION : input.agent
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
         const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
@@ -670,7 +678,6 @@ const layer = Layer.effect(
         format: input.format,
       }
 
-      const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       if (
         current.agent !== info.agent ||
         current.model?.providerID !== info.model.providerID ||
@@ -1009,6 +1016,10 @@ const layer = Layer.effect(
         { message: info, parts: resolvedParts },
       )
 
+      if (learning && (info.agent !== Agent.LEARNING_COMPANION || resolvedParts.some((part) => part.type !== "text"))) {
+        throw new Error("The learning companion accepts only text questions and cannot switch agents.")
+      }
+
       const parts = yield* Effect.forEach(resolvedParts, (part) =>
         part.type === "file" && part.mime.startsWith("image/")
           ? image.normalize(part).pipe(
@@ -1162,7 +1173,12 @@ const layer = Layer.effect(
             if (!lastAssistant.error && !orphan && !["unknown", "content-filter"].includes(lastAssistant.finish)) {
               reason = "normal"
             }
-            if (step > 0 && reason === "normal") {
+            if (
+              step > 0 &&
+              reason === "normal" &&
+              !Agent.isLearningSession(session) &&
+              lastUser.agent !== Agent.LEARNING_COMPANION
+            ) {
               // Include work before a busy steer, while keeping later tasks separate.
               const all = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
               const messages = all.slice(all.findIndex((message) => message.info.id === taskStart))
@@ -1290,6 +1306,8 @@ const layer = Layer.effect(
               messages: msgs,
               promptOps,
             }).pipe(
+              Effect.provideService(Agent.Service, agents),
+              Effect.provideService(FSUtil.Service, fsys),
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
               Effect.provideService(ToolRegistry.Service, registry),
@@ -1312,12 +1330,29 @@ const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
+            // Retain the chat transcript, but only expose the current notebook/evidence injection to the model.
+            const modelHistory =
+              Agent.isLearningSession(session) || agent.name === Agent.LEARNING_COMPANION
+                ? msgs.map((row) => {
+                    if (
+                      row.info.role !== "user" ||
+                      !row.parts.some((part) => part.type === "text" && part.metadata?.["learning.context"])
+                    )
+                      return row
+                    return {
+                      ...row,
+                      parts: row.parts
+                        .filter((part) => row.info.id === lastUser.id || part.type !== "text" || !part.synthetic)
+                        .map((part) => (part.type === "text" ? { ...part, metadata: undefined } : part)),
+                    }
+                  })
+                : msgs
             const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(modelHistory, model),
             ])
             const system = [
               ...env,
@@ -1431,11 +1466,23 @@ const layer = Layer.effect(
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
+      if (
+        input.agent === Agent.LEARNING_COMPANION ||
+        Agent.isLearningSession(yield* sessions.get(input.sessionID).pipe(Effect.orDie))
+      ) {
+        throw new Error("The learning companion cannot execute shell commands.")
+      }
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      if (
+        input.agent === Agent.LEARNING_COMPANION ||
+        Agent.isLearningSession(yield* sessions.get(input.sessionID).pipe(Effect.orDie))
+      ) {
+        throw new Error("The learning companion cannot execute commands.")
+      }
       yield* Effect.logInfo("command", {
         "session.id": input.sessionID,
         command: input.command,
@@ -1449,7 +1496,9 @@ const layer = Layer.effect(
         yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
         throw error
       }
-
+      if (cmd.agent === Agent.LEARNING_COMPANION) {
+        throw new Error("The learning companion cannot execute commands.")
+      }
       const agentName = cmd.agent ?? input.agent
 
       const raw = input.arguments.match(argsRegex) ?? []
