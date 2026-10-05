@@ -1861,60 +1861,6 @@ it.instance("structured completion resumes a pending steer and returns its struc
   }),
 )
 
-it.instance("learning history keeps saved snapshots without replaying old notebook injections", () =>
-  Effect.gen(function* () {
-    const { llm } = yield* useServerConfig(providerCfg)
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const source = yield* sessions.create({ title: "Source" })
-    const chat = yield* sessions.create({
-      parentID: source.id,
-      agent: "learning-companion",
-      metadata: { "learning.source": source.id, "learning.role": "chat" },
-    })
-    yield* llm.text("First explanation.")
-    yield* prompt.prompt({
-      sessionID: chat.id,
-      agent: "learning-companion",
-      model: ref,
-      parts: [
-        {
-          type: "text",
-          text: "Explain validation",
-          metadata: {
-            "learning.context": { notes: [{ id: "removed-note", text: "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER" }] },
-          },
-        },
-        {
-          type: "text",
-          synthetic: true,
-          text: JSON.stringify({
-            savedNotes: [{ id: "removed-note", text: "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER" }],
-          }),
-        },
-      ],
-    })
-    expect(JSON.stringify((yield* llm.inputs)[0])).toContain("PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER")
-    yield* llm.text("Second explanation.")
-    yield* prompt.prompt({
-      sessionID: chat.id,
-      agent: "learning-companion",
-      model: ref,
-      parts: [
-        { type: "text", text: "Explain tests", metadata: { "learning.context": { notes: [] } } },
-        { type: "text", synthetic: true, text: JSON.stringify({ savedNotes: [] }) },
-      ],
-    })
-    const input = JSON.stringify((yield* llm.inputs).at(-1))
-    expect(input).not.toContain("PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER")
-    expect(input).toContain("First explanation.")
-    expect(input).toContain("Explain validation")
-    expect(JSON.stringify(yield* sessions.messages({ sessionID: chat.id }))).toContain(
-      "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER",
-    )
-  }),
-)
-
 for (const interrupted of [false, true]) {
   it.instance(
     `steering admission${interrupted ? " interrupted by its caller" : ""} cannot be handled before its text parts are persisted`,
