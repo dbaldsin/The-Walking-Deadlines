@@ -1044,8 +1044,28 @@ const layer = Layer.effect(
         })
       }
 
-      yield* sessions.updateMessage(info)
-      for (const part of parts) yield* sessions.updatePart(part)
+      // History selection must see the user row and all its parts together.
+      yield* state.withAdmission(
+        input.sessionID,
+        Effect.gen(function* () {
+          const existing = input.messageID
+            ? yield* MessageV2.get({ sessionID: input.sessionID, messageID: info.id }).pipe(
+                Effect.provideService(Database.Service, database),
+                Effect.option,
+              )
+            : Option.none()
+          yield* Effect.gen(function* () {
+            yield* sessions.updateMessage(info)
+            for (const part of parts) yield* sessions.updatePart(part)
+          }).pipe(
+            Effect.onExit((exit) =>
+              Exit.isFailure(exit) && Option.isNone(existing)
+                ? sessions.removeMessage({ sessionID: input.sessionID, messageID: info.id }).pipe(Effect.asVoid)
+                : Effect.void,
+            ),
+          )
+        }).pipe(Effect.uninterruptible),
+      )
 
       return { info, parts }
     }, Effect.scoped)
@@ -1053,22 +1073,28 @@ const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
-      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-      yield* revert.cleanup(session)
-      const message = yield* createUserMessage(input)
-      yield* sessions.touch(input.sessionID)
+      return yield* state.withPrompt(input.sessionID, (epoch) =>
+        Effect.gen(function* () {
+          const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+          yield* revert.cleanup(session)
+          const message = yield* createUserMessage(input)
+          yield* sessions.touch(input.sessionID)
 
-      const permissions: PermissionV1.Rule[] = []
-      for (const [t, enabled] of Object.entries(input.tools ?? {})) {
-        permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
-      }
-      if (permissions.length > 0) {
-        session.permission = permissions
-        yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
-      }
+          const permissions: PermissionV1.Rule[] = []
+          for (const [t, enabled] of Object.entries(input.tools ?? {})) {
+            permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
+          }
+          if (permissions.length > 0) {
+            session.permission = permissions
+            yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
+          }
 
-      if (input.noReply === true) return message
-      return yield* loop({ sessionID: input.sessionID })
+          // Stop during idle admission preserves the submitted message but does not start a provider turn.
+          // In a brand-new session there may be no assistant to use as an interruption fallback.
+          if (input.noReply === true || (yield* state.isCancelled(input.sessionID, epoch))) return message
+          return yield* loop({ sessionID: input.sessionID }, epoch)
+        }),
+      )
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -1079,26 +1105,30 @@ const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
+    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionRunState.RunResult> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
         let taskStart: MessageID | undefined
+        let handledUser: SessionV1.User | undefined
+        let reason: "normal" | "stopped" = "stopped"
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
-          let msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
-            Effect.provideService(Database.Service, database),
+          let msgs = yield* state.withAdmission(
+            sessionID,
+            MessageV2.filterCompactedEffect(sessionID).pipe(Effect.provideService(Database.Service, database)),
           )
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
           taskStart ??= lastUser.id
+          handledUser = lastUser
 
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1129,7 +1159,10 @@ const layer = Layer.effect(
               })
             }
             yield* Effect.logInfo("exiting loop", { "session.id": sessionID })
-            if (step > 0 && !lastAssistant.error) {
+            if (!lastAssistant.error && !orphan && !["unknown", "content-filter"].includes(lastAssistant.finish)) {
+              reason = "normal"
+            }
+            if (step > 0 && reason === "normal") {
               // Include work before a busy steer, while keeping later tasks separate.
               const all = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
               const messages = all.slice(all.findIndex((message) => message.info.id === taskStart))
@@ -1243,7 +1276,7 @@ const layer = Layer.effect(
             })
             .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
-          const outcome: "break" | "continue" = yield* Effect.gen(function* () {
+          const outcome: "normal" | "stopped" | "continue" = yield* Effect.gen(function* () {
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
@@ -1314,7 +1347,7 @@ const layer = Layer.effect(
               handle.message.structured = structured
               handle.message.finish = handle.message.finish ?? "stop"
               yield* sessions.updateMessage(handle.message)
-              return "break" as const
+              return result === "stop" || handle.message.error ? ("stopped" as const) : ("normal" as const)
             }
 
             const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
@@ -1329,7 +1362,7 @@ const layer = Layer.effect(
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
                 yield* events.publish(Session.Event.Error, { sessionID, error: handle.message.error })
-                return "break" as const
+                return "stopped" as const
               }
               if (format.type === "json_schema") {
                 handle.message.error = new SessionV1.StructuredOutputError({
@@ -1337,11 +1370,11 @@ const layer = Layer.effect(
                   retries: 0,
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
-                return "break" as const
+                return "stopped" as const
               }
             }
 
-            if (result === "stop") return "break" as const
+            if (result === "stop") return "stopped" as const
             if (result === "compact") {
               yield* compaction.create({
                 sessionID,
@@ -1356,19 +1389,43 @@ const layer = Layer.effect(
             Effect.ensuring(instruction.clear(handle.message.id)),
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
-          if (outcome === "break") break
+          if (outcome !== "continue") {
+            reason = outcome
+            break
+          }
           continue
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        return yield* lastAssistant(sessionID)
+        const message = yield* lastAssistant(sessionID)
+        if (reason === "normal" && handledUser) return { message, reason, handledUser }
+        return { message, reason: "stopped" }
       },
     )
 
-    const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
-      input: LoopInput,
-    ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+    const loop: (input: LoopInput, expectedEpoch?: number) => Effect.Effect<SessionV1.WithParts> = Effect.fn(
+      "SessionPrompt.loop",
+    )(function* (input: LoopInput, expectedEpoch?: number) {
+      return yield* state.ensureRunning(
+        input.sessionID,
+        lastAssistant(input.sessionID),
+        runLoop(input.sessionID),
+        (handledUser) =>
+          state.withAdmission(
+            input.sessionID,
+            sessions
+              .findMessage(input.sessionID, (message) => message.info.role === "user")
+              .pipe(
+                Effect.orDie,
+                Effect.map(
+                  (latest) =>
+                    Option.isSome(latest) &&
+                    MessageV2.latest([{ info: handledUser, parts: [] }, latest.value]).user?.id !== handledUser.id,
+                ),
+              ),
+          ),
+        expectedEpoch,
+      )
     })
 
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
@@ -1392,6 +1449,7 @@ const layer = Layer.effect(
         yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
         throw error
       }
+
       const agentName = cmd.agent ?? input.agent
 
       const raw = input.arguments.match(argsRegex) ?? []
