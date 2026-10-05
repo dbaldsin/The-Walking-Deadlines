@@ -133,7 +133,20 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 .pipe(Effect.orDie)
               const requested = item.id === "read" ? args.filePath : (args.path ?? instance.directory)
               if (typeof requested !== "string") throw new Error("A project path is required for this lookup.")
-              const target = yield* fs.realPath(path.resolve(instance.directory, requested)).pipe(Effect.orDie)
+              const requestedPath = path.resolve(instance.directory, requested)
+              // Missing files keep Read's useful suggestions; the existing ancestor still enforces the boundary.
+              const canonical = (target: string): Effect.Effect<string> =>
+                fs.realPath(target).pipe(
+                  Effect.catchReason("PlatformError", "NotFound", () =>
+                    target === path.dirname(target)
+                      ? Effect.die(new Error("Cannot resolve project lookup path"))
+                      : canonical(path.dirname(target)).pipe(
+                          Effect.map((parent) => path.join(parent, path.basename(target))),
+                        ),
+                  ),
+                  Effect.orDie,
+                )
+              const target = yield* canonical(requestedPath)
               const relative = path.relative(root, target)
               if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
                 throw new Error("Learning companion lookup exceeds the project boundary.")

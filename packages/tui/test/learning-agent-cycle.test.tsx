@@ -12,6 +12,7 @@ async function cycleView(
     agents?: string[]
     source?: { id: string; parentID?: string; metadata?: Record<string, unknown> } | null
     learning?: boolean
+    enabled?: boolean
     split?: boolean
     shortcut?: string
   } = {},
@@ -36,6 +37,7 @@ async function cycleView(
     const offCommands = keymap.registerLayer({
       commands: [
         ...agentCycleCommands({
+          enabled: () => options.enabled !== false,
           agent: {
             list: () => state.names.map((name) => ({ name })),
             current: () => ({ name: state.current }),
@@ -186,4 +188,17 @@ test("an empty agent list delegates normal cycling and cycle-back does not chang
   expect(view.state.opened).toBe(0)
   expect(view.state.blurred).toBe(0)
   expect(view.state.closed).toBe(0)
+})
+
+test("Shift+Tab preserves ordinary navigation unless enabled", async () => {
+  const view = await cycleView({ enabled: false })
+  try {
+    view.state.current = "plan"
+    view.app.mockInput.pressTab({ shift: true })
+    await view.app.flush()
+    expect(view.state.opened).toBe(0)
+    expect(view.state.moves).toEqual([-1])
+  } finally {
+    view.app.renderer.destroy()
+  }
 })

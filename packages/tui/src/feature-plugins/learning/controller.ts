@@ -79,7 +79,14 @@ export function createCompanion(api: TuiPluginApi) {
   let disposed = false
 
   function ensure(sourceID: string) {
-    if (!records[sourceID]) set(sourceID, { turns: [], busy: false, paused: false, entries: [], version: "" })
+    if (!records[sourceID])
+      set(sourceID, {
+        turns: [],
+        busy: false,
+        paused: api.kv.get(`learning.topics.paused:${sourceID}`, true),
+        entries: [],
+        version: "",
+      })
     if (!controls.has(sourceID))
       controls.set(sourceID, { children: {}, active: {}, last: 0, seen: new Set(), deliveries: new Map() })
     return controls.get(sourceID)!
@@ -167,6 +174,7 @@ export function createCompanion(api: TuiPluginApi) {
         control.directory = project?.id !== "global" && project?.worktree ? project.worktree : source.directory
         control.book = await Learning.notebook(api.state.path.state, control.directory)
       }
+      set(sourceID, "paused", api.kv.get(`learning.topics.paused:${sourceID}`, true))
       set(sourceID, "entries", await control.book.list())
       const children =
         (
@@ -629,6 +637,7 @@ export function createCompanion(api: TuiPluginApi) {
     cancel,
     pause(sourceID: string, paused: boolean) {
       const control = ensure(sourceID)
+      api.kv.set(`learning.topics.paused:${sourceID}`, paused)
       set(sourceID, "paused", paused)
       if (paused && control.timer) {
         clearTimeout(control.timer)

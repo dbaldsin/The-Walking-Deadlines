@@ -14,7 +14,11 @@ export type RunResult =
 
 export interface Interface {
   readonly withAdmission: <A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
-  readonly cancellationEpoch: (sessionID: SessionID) => Effect.Effect<number>
+  readonly withPrompt: <A, E, R>(
+    sessionID: SessionID,
+    work: (epoch: number) => Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E, R>
+  readonly isCancelled: (sessionID: SessionID, epoch: number) => Effect.Effect<boolean>
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly ensureRunning: (
@@ -44,8 +48,8 @@ const layer = Layer.effect(
       Effect.fn("SessionRunState.state")(function* () {
         const scope = yield* Scope.Scope
         const runners = new Map<SessionID, Runner.Runner<RunResult>>()
-        const completions = new Map<SessionID, { epoch: number; exit?: Exit.Exit<RunResult> }>()
-        const admissions = new Map<SessionID, Semaphore.Semaphore>()
+        const completions = new Map<SessionID, { epoch: number; callers: number; exit?: Exit.Exit<RunResult> }>()
+        const admissions = new Map<SessionID, { permit: Semaphore.Semaphore; callers: number }>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
             yield* Effect.forEach(runners.values(), (runner) => runner.cancel, {
@@ -66,9 +70,17 @@ const layer = Layer.effect(
       work: Effect.Effect<A, E, R>,
     ) {
       const data = yield* InstanceState.get(state)
-      const permit = data.admissions.get(sessionID) ?? Semaphore.makeUnsafe(1)
-      data.admissions.set(sessionID, permit)
-      return yield* permit.withPermit(work)
+      const admission = data.admissions.get(sessionID) ?? { permit: Semaphore.makeUnsafe(1), callers: 0 }
+      admission.callers++
+      data.admissions.set(sessionID, admission)
+      return yield* admission.permit.withPermit(work).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            admission.callers--
+            if (!admission.callers) data.admissions.delete(sessionID)
+          }),
+        ),
+      )
     })
 
     const runner = Effect.fn("SessionRunState.runner")(function* (
@@ -97,18 +109,43 @@ const layer = Layer.effect(
       if (existing?.busy) yield* busyError(sessionID)
     })
 
-    const cancellationEpoch = Effect.fn("SessionRunState.cancellationEpoch")(function* (sessionID: SessionID) {
+    // A completion is shared only by live callers. Keep it through the idle settlement gap,
+    // then release its assistant payload once the final waiter/prompt admission has settled.
+    const withCompletion = Effect.fn("SessionRunState.withCompletion")(function* <A, E, R>(
+      sessionID: SessionID,
+      work: (completion: { epoch: number; callers: number; exit?: Exit.Exit<RunResult> }) => Effect.Effect<A, E, R>,
+    ) {
       const data = yield* InstanceState.get(state)
-      return data.completions.get(sessionID)?.epoch ?? 0
+      const completion = data.completions.get(sessionID) ?? { epoch: 0, callers: 0 }
+      completion.callers++
+      data.completions.set(sessionID, completion)
+      return yield* work(completion).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            completion.callers--
+            if (!completion.callers) data.completions.delete(sessionID)
+          }),
+        ),
+      )
+    })
+
+    const withPrompt: Interface["withPrompt"] = (sessionID, work) =>
+      withCompletion(sessionID, (completion) => work(completion.epoch))
+
+    const isCancelled = Effect.fn("SessionRunState.isCancelled")(function* (sessionID: SessionID, epoch: number) {
+      const data = yield* InstanceState.get(state)
+      return data.completions.get(sessionID)?.epoch !== epoch
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
-      // Stop invalidates waiting callers even after the Runner has become idle.
-      const completion = data.completions.get(sessionID) ?? { epoch: 0 }
-      completion.epoch++
-      completion.exit = undefined
-      data.completions.set(sessionID, completion)
+      // Stop also invalidates prompts still persisting their user row while idle.
+      // Admission finishes atomically, but execution waits for an explicit fresh prompt.
+      const completion = data.completions.get(sessionID)
+      if (completion) {
+        completion.epoch++
+        completion.exit = undefined
+      }
       yield* cancelBackgroundJobs(background, sessionID)
       const existing = data.runners.get(sessionID)
       if (!existing) {
@@ -126,38 +163,40 @@ const layer = Layer.effect(
       expectedEpoch?: number,
     ) {
       const data = yield* InstanceState.get(state)
-      const completion = data.completions.get(sessionID) ?? { epoch: 0 }
-      data.completions.set(sessionID, completion)
-      const epoch = expectedEpoch ?? completion.epoch
-      if (completion.epoch !== epoch) return yield* onInterrupt
-      const guarded = (expected: Exit.Exit<RunResult> | undefined) =>
+      return yield* withCompletion(sessionID, (completion) =>
         Effect.gen(function* () {
-          if (completion.epoch !== epoch) {
-            return { message: yield* onInterrupt, reason: "cancelled" as const }
+          const epoch = expectedEpoch ?? completion.epoch
+          if (completion.epoch !== epoch) return yield* onInterrupt
+          const guarded = (expected: Exit.Exit<RunResult> | undefined) =>
+            Effect.gen(function* () {
+              if (completion.epoch !== epoch) {
+                return { message: yield* onInterrupt, reason: "cancelled" as const }
+              }
+              if (completion.exit !== expected && completion.exit) return yield* completion.exit
+              return yield* work
+            }).pipe(
+              Effect.onExit((exit) =>
+                Effect.sync(() => {
+                  if (completion.epoch === epoch) completion.exit = exit
+                }),
+              ),
+            )
+          const initial = yield* runner(sessionID, onInterrupt)
+          let result = yield* initial.ensureRunning(guarded(completion.exit))
+          while (true) {
+            if (completion.epoch !== epoch) return result.message
+            if (result.reason === "cancelled") return result.message
+            // Another waiter may already have finished the successor while this caller resumed.
+            const observed = completion.exit
+            const latest = observed ? yield* observed : result
+            if (latest.reason !== "normal" || !(yield* hasPendingInput(latest.handledUser))) return latest.message
+            if (completion.epoch !== epoch) return yield* onInterrupt
+            if (completion.exit !== observed) continue
+            const next = yield* runner(sessionID, onInterrupt)
+            result = yield* next.ensureRunning(guarded(observed))
           }
-          if (completion.exit !== expected && completion.exit) return yield* completion.exit
-          return yield* work
-        }).pipe(
-          Effect.onExit((exit) =>
-            Effect.sync(() => {
-              if (completion.epoch === epoch) completion.exit = exit
-            }),
-          ),
-        )
-      const initial = yield* runner(sessionID, onInterrupt)
-      let result = yield* initial.ensureRunning(guarded(completion.exit))
-      while (true) {
-        if (completion.epoch !== epoch) return result.message
-        if (result.reason === "cancelled") return result.message
-        // Another waiter may already have finished the successor while this caller resumed.
-        const observed = completion.exit
-        const latest = observed ? yield* observed : result
-        if (latest.reason !== "normal" || !(yield* hasPendingInput(latest.handledUser))) return latest.message
-        if (completion.epoch !== epoch) return yield* onInterrupt
-        if (completion.exit !== observed) continue
-        const next = yield* runner(sessionID, onInterrupt)
-        result = yield* next.ensureRunning(guarded(observed))
-      }
+        }),
+      )
     })
 
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
@@ -175,7 +214,7 @@ const layer = Layer.effect(
         )
     })
 
-    return Service.of({ withAdmission, cancellationEpoch, assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({ withAdmission, withPrompt, isCancelled, assertNotBusy, cancel, ensureRunning, startShell })
   }),
 )
 

@@ -169,3 +169,27 @@ test("relevant notes identify their influence and exclude unrelated answers", ()
   ]
   expect(Learning.notes(entries, "schema validation").map((x) => x.id)).toEqual(["n1", "g"])
 })
+
+test("historical env-file contents never enter explanation or notebook evidence", () => {
+  const context = Learning.context([
+    {
+      info: { id: "msg_secret", role: "assistant", time: { completed: 1 } },
+      parts: [
+        {
+          id: "secret",
+          type: "tool",
+          tool: "read",
+          state: { status: "completed", input: { filePath: "/project/.env.local" }, output: "API_KEY=private-value" },
+        },
+        {
+          id: "safe",
+          type: "tool",
+          tool: "read",
+          state: { status: "completed", input: { filePath: "/project/app.ts" }, output: "const answer = 42" },
+        },
+      ],
+    },
+  ])
+  expect(context.text).not.toContain("private-value")
+  expect(context.evidence.map((item) => item.id)).toEqual(["safe"])
+})

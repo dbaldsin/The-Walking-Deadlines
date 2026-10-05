@@ -327,3 +327,18 @@ testEffect(layer(undefined, true)).instance("rejects non-text parts injected by 
     expect(yield* sessions.messages({ sessionID: child.id })).toEqual([])
   }),
 )
+
+it.instance("missing files retain Read suggestions and missing paths behind escaping symlinks are denied", () =>
+  Effect.gen(function* () {
+    const instance = yield* TestInstance
+    yield* Effect.promise(() => Bun.write(path.join(instance.directory, "answer.ts"), "const answer = 42"))
+    const missing = yield* execute("read", { filePath: "anser.ts" }).pipe(Effect.exit)
+    expect(Exit.isFailure(missing)).toBe(true)
+    if (Exit.isFailure(missing)) expect(Cause.pretty(missing.cause)).toContain("File not found")
+    const outside = yield* tmpdirScoped()
+    yield* Effect.promise(() => fs.symlink(outside, path.join(instance.directory, "escape")))
+    const escaped = yield* execute("read", { filePath: "escape/missing/nested.ts" }).pipe(Effect.exit)
+    expect(Exit.isFailure(escaped)).toBe(true)
+    if (Exit.isFailure(escaped)) expect(Cause.pretty(escaped.cause)).toContain("project boundary")
+  }),
+)

@@ -153,6 +153,14 @@ export namespace Learning {
         const state = record(part.state ?? {})
         if (part.type === "tool" && state.status === "completed") {
           const input = record(state.input ?? {})
+          // Historical tools can contain secrets even when current companion lookups cannot read them.
+          // Omit the complete payload (input/output/metadata), rather than persisting a partially redacted copy.
+          if (
+            /(?:^|[\\/\s"'])\.env[^\\/\s"']*(?:$|[\\/\s"'])/.test(
+              JSON.stringify(input) + " " + JSON.stringify(state.metadata ?? {}),
+            )
+          )
+            continue
           const reference =
             typeof input.filePath === "string"
               ? input.filePath.split(/[\\/]/).slice(-3).join("/")

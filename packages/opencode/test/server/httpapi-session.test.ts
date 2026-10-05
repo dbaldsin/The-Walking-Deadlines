@@ -26,12 +26,12 @@ import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/se
 import { Session } from "@/session/session"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { Database } from "@opencode-ai/core/database/database"
-import { SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, provideInstanceEffect, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { TestLLMServer } from "../lib/llm-server"
@@ -425,6 +425,44 @@ describe("session HttpApi", () => {
         root: sessionDirectory,
       })
     }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
+  )
+
+  it.instance(
+    "unexpected stored output formats do not break session message listing",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const session = yield* createSession({ title: "legacy format" })
+        const message = yield* requestJson<SessionV1.WithParts>(
+          pathFor(SessionPaths.prompt, { sessionID: session.id }),
+          {
+            method: "POST",
+            headers: { ...headers, "content-type": "application/json" },
+            body: JSON.stringify({
+              agent: "build",
+              model: { providerID: "test", modelID: "test-model" },
+              noReply: true,
+              parts: [{ type: "text", text: "retained question" }],
+            }),
+          },
+        )
+        const { db } = yield* Database.Service
+        yield* db
+          .update(MessageTable)
+          .set({ data: sql`json_set(${MessageTable.data}, '$.format', json('{"type":"future"}'))` })
+          .where(eq(MessageTable.id, message.info.id))
+          .run()
+          .pipe(Effect.orDie)
+        const messages = yield* requestJson<SessionV1.WithParts[]>(
+          pathFor(SessionPaths.messages, { sessionID: session.id }),
+          { headers },
+        )
+        expect(messages).toHaveLength(1)
+        expect(messages[0].info.role === "user" ? (messages[0].info.format ?? undefined) : undefined).toBeUndefined()
+        expect(messages[0].parts.some((part) => part.type === "text" && part.text === "retained question")).toBe(true)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
   )
 
   it.instance(

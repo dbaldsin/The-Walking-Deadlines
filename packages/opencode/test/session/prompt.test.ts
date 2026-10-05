@@ -2205,6 +2205,57 @@ it.instance("Stop during durable steering admission prevents execution and permi
   }),
 )
 
+it.instance("Stop during first idle prompt admission preserves the question without starting execution", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const events = yield* EventV2Bridge.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const admitting = yield* Deferred.make<void>()
+    const partsReady = yield* Deferred.make<void>()
+    const id = MessageID.ascending()
+    const off = yield* events.listen((event) =>
+      Effect.gen(function* () {
+        if (event.type !== SessionV1.Event.MessageUpdated.type) return
+        const data = event.data as typeof SessionV1.Event.MessageUpdated.data.Type
+        if (data.info.id !== id) return
+        yield* Deferred.succeed(admitting, undefined)
+        yield* Deferred.await(partsReady)
+      }),
+    )
+    yield* Effect.addFinalizer(() => off)
+    yield* llm.text("fresh reply")
+    const steer = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "pending steer" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* Deferred.await(admitting)
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID: id })).parts).toEqual([])
+    yield* prompt.cancel(chat.id)
+    expect(yield* llm.calls).toBe(0)
+    yield* Deferred.succeed(partsReady, undefined)
+    const stopped = yield* Fiber.join(steer)
+    expect(stopped.info.role).toBe("user")
+    expect(stopped.parts.some((part) => part.type === "text" && part.text === "pending steer")).toBe(true)
+    expect(yield* llm.calls).toBe(0)
+    expect(yield* llm.pending).toBe(1)
+    const fresh = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "explicit fresh request" }],
+    })
+    expect(fresh.parts.some((part) => part.type === "text" && part.text === "fresh reply")).toBe(true)
+    expect(yield* llm.calls).toBe(1)
+  }),
+)
+
 it.instance("assertNotBusy fails with BusyError when loop running", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

@@ -52,11 +52,14 @@ for (const next of ["Learn", "fullscreen"])
 test("Shift+Tab from the Learn question returns to Build; Notebook and preview keep control navigation", async () => {
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 140, 36)
+  await view.click("learning-options")
+  await view.click("learning-agent-cycle")
   const agent = { name: "plan" }
   const off = view.keymap().registerLayer({
     commands: [
       { name: "learning.open", run: () => view.dialog().focus() },
       ...agentCycleCommands({
+        enabled: () => true,
         agent: {
           list: () => [{ name: "build" }, { name: "plan" }],
           current: () => agent,

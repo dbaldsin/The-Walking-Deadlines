@@ -8,6 +8,7 @@ export function agentCycleCommands(input: {
     move: (direction: 1 | -1) => void
     set: (name: string) => void
   }
+  enabled?: () => boolean
   source: () => { id: string; parentID?: string; metadata?: Record<string, unknown> } | undefined
   keymap: Pick<OpenTuiKeymap, "getCommands" | "dispatchCommand">
   dialog: { readonly splitWidth: number; blur?: () => void; clear: () => void }
@@ -15,6 +16,7 @@ export function agentCycleCommands(input: {
   function available() {
     const source = input.source()
     return (
+      input.enabled?.() === true &&
       !!source &&
       !isLearningSession(source) &&
       input.keymap.getCommands().some((command) => command.name === "learning.open")

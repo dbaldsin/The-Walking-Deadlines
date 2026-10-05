@@ -1084,23 +1084,28 @@ const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
-      const epoch = yield* state.cancellationEpoch(input.sessionID)
-      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-      yield* revert.cleanup(session)
-      const message = yield* createUserMessage(input)
-      yield* sessions.touch(input.sessionID)
+      return yield* state.withPrompt(input.sessionID, (epoch) =>
+        Effect.gen(function* () {
+          const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+          yield* revert.cleanup(session)
+          const message = yield* createUserMessage(input)
+          yield* sessions.touch(input.sessionID)
 
-      const permissions: PermissionV1.Rule[] = []
-      for (const [t, enabled] of Object.entries(input.tools ?? {})) {
-        permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
-      }
-      if (permissions.length > 0) {
-        session.permission = permissions
-        yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
-      }
+          const permissions: PermissionV1.Rule[] = []
+          for (const [t, enabled] of Object.entries(input.tools ?? {})) {
+            permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
+          }
+          if (permissions.length > 0) {
+            session.permission = permissions
+            yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
+          }
 
-      if (input.noReply === true) return message
-      return yield* loop({ sessionID: input.sessionID }, epoch)
+          // Stop during idle admission preserves the submitted message but does not start a provider turn.
+          // In a brand-new session there may be no assistant to use as an interruption fallback.
+          if (input.noReply === true || (yield* state.isCancelled(input.sessionID, epoch))) return message
+          return yield* loop({ sessionID: input.sessionID }, epoch)
+        }),
+      )
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {

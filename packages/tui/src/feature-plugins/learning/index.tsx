@@ -369,6 +369,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
         desc: "Coding mode / previous companion control",
         cmd: () => {
           if (
+            props.api.kv.get("learning.agent-cycle", false) === true &&
             tab() === "chat" &&
             editor() === "question" &&
             renderer.currentFocusedRenderable === target() &&
@@ -576,7 +577,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           menu() === "help"
             ? 7
             : menu() === "options"
-              ? 5
+              ? 6
               : menu() === "actions"
                 ? latest()?.version !== record()?.version
                   ? 3
@@ -604,7 +605,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           />
           <Action
             id="learning-pause"
-            label={record()?.paused ? "Resume topics" : "Pause topics"}
+            label={record()?.paused ? "Enable topic suggestions" : "Disable topic suggestions"}
             hint="Ctrl+P"
             run={() => {
               closeMenu()
@@ -619,6 +620,19 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
               closeMenu()
               if (split()) props.api.ui.dialog.blur()
               else props.api.ui.dialog.clear()
+            }}
+          />
+          <Action
+            id="learning-agent-cycle"
+            label={
+              props.api.kv.get("learning.agent-cycle", false)
+                ? "Remove Learn from Shift+Tab"
+                : "Include Learn in Shift+Tab"
+            }
+            run={() => {
+              props.api.kv.set("learning.agent-cycle", !props.api.kv.get("learning.agent-cycle", false))
+              closeMenu()
+              focusEditor()
             }}
           />
           <Action id="learning-help" label="Shortcut help" run={() => openMenu("help")} />

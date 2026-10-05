@@ -177,7 +177,15 @@ function fixture(directory: string) {
     }
     throw new Error("Unexpected request " + input.method + " " + url.pathname)
   }) as typeof fetch
+  const preferences = new Map<string, unknown>()
   const api = {
+    kv: {
+      ready: true,
+      get: (key: string, fallback?: unknown) => preferences.get(key) ?? fallback,
+      set: (key: string, value: unknown) => {
+        preferences.set(key, value)
+      },
+    },
     client: createOpencodeClient({ baseUrl: "http://companion.test", fetch: transport }),
     state: {
       path: { state: path.join(directory, "state") },
@@ -326,6 +334,7 @@ test("topics cannot block questions; pause and disposal stop only companion chil
       request.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true }),
     )
   }
+  f.companion.pause("source-a", false)
   const topic = f.companion.suggest("source-a")
   await started.promise
   expect(f.companion.records["source-a"].busy).toBe(false)
@@ -363,6 +372,7 @@ test("a busy chat still receives one deduplicated proactive topic", async () => 
       request.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true }),
     )
   }
+  f.companion.pause("source-a", false)
   const chat = f.companion.ask("source-a", "A longer question")
   await started.promise
   expect(f.companion.records["source-a"].busy).toBe(true)
@@ -510,4 +520,25 @@ test("restoration pages past tool-heavy history and preserves the latest 30 stab
     f.prompts.slice(-30).map((prompt) => prompt.messageID),
   )
   expect(f.requests.some((request) => request.startsWith("DELETE"))).toBe(false)
+})
+
+test("topic suggestions are opt-in and persist across controller recreation", async () => {
+  await using tmp = await tmpdir()
+  await using f = fixture(tmp.path)
+  await f.companion.load("source-a")
+  expect(f.companion.records["source-a"].paused).toBe(true)
+  await f.companion.suggest("source-a")
+  expect(f.prompts).toHaveLength(0)
+  f.companion.pause("source-a", false)
+  const restored = createCompanion(f.api)
+  await restored.load("source-a")
+  expect(restored.records["source-a"].paused).toBe(false)
+  await restored.suggest("source-a")
+  expect(f.prompts).toHaveLength(1)
+  restored.pause("source-a", true)
+  const paused = createCompanion(f.api)
+  await paused.load("source-a")
+  expect(paused.records["source-a"].paused).toBe(true)
+  await paused.suggest("source-a")
+  expect(f.prompts).toHaveLength(1)
 })

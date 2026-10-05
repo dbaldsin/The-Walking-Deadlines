@@ -728,6 +728,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         },
       },
       ...agentCycleCommands({
+        enabled: () => kv.get("learning.agent-cycle", false),
         agent: local.agent,
         source: () => {
           const current = route.data
