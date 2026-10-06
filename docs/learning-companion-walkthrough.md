@@ -125,3 +125,37 @@ Final focused TUI rerun after correcting the opt-in fixture: **96 passed, 0 fail
 PR #32 was merged after Sangyoon’s approval and passing unit, typecheck and smoke checks. PR #33 now targets main; it still needs approval. PR #30 still needs re-review.
 
 The native VS Code retry could capture the demo shell, but launching the existing low-priority command returned `noWindowsAvailable`. No new demo process was started. The native UI walkthrough and idle/scroll/answer resource samples remain pending; this attempt does not satisfy that gate. System free memory before the retry was 42%, with 6.3 GiB available on the Data volume. No broad tests, builds or extra demo instances were run concurrently.
+
+## October 6 native keyboard walkthrough and notebook correction
+
+A single native VS Code terminal successfully rendered the companion after allowing the slower development startup to finish. The runtime used `nice -n 10`, `--pure`, the coding session's `openai/gpt-5.6-sol` model, and disabled optional MCP integrations. Diagnostic terminal logging was removed from the clean run. Earlier unsuccessful attempts above remain historical records.
+
+Verified visually with live model responses:
+
+- Open Learn from the command palette; restore the existing source session's companion chat and earlier notebook entries.
+- Ask about the completed calculator change; inspect labelled The idea / What changed / Why it matters / Verified sections and collapsed sources.
+- Ctrl+1 Simpler and Ctrl+2 Example produce short visible follow-up labels and actual project code.
+- Page Up scrolls Learn while the coding transcript remains unchanged. Thinking keeps the composer and explicit Cancel visible.
+- Escape dismisses Options while retaining Learn. Options shows topic suggestions and Learn in Shift+Tab disabled until explicitly enabled.
+- Ctrl+S confirms Saved to notebook; Notebook restores historical explanations unchanged. Add → Note saves a new private note and increments the category count.
+- A proposed read-only instruction opens the exact-text preview with destination title and complete session ID. Back preserves the question draft. Approve and send adds the instruction once to the coding conversation; Sent appears afterward. The coding agent runs the calculator test: **13 pass, 0 fail**, no file edits, followed by the existing Learning Recap.
+- Sources expand through keyboard navigation without starting a companion answer. Coding continues while Learn remains open.
+- Options → Focus coding retains the pane and learning draft while accepting a separate unsent coding draft.
+
+The live note editor exposed Save clipping after a long draft. The composer now gives its textarea a shrinking zero flex basis and reserves the action's width. A rendered regression reproduced the overflow at 140 columns before the fix; both 80- and 140-column cases pass afterward. The complete minimal-interface file passes **13 tests, 146 assertions, 0 failures** in 5.14 seconds.
+
+Native screenshots (live VS Code, not fixture renders):
+
+![Native project explanation](images/learning-native-explanation.png)
+
+![Native notebook with restored entries](images/learning-native-notebook.png)
+
+![Exact steering destination and approval preview](images/learning-native-steering.png)
+
+![Confirmed delivery and passing coding test](images/learning-native-delivery.png)
+
+Resource snapshots for the single runtime: approximately **0.8% CPU / 172 MiB RSS** shortly after launch, **9.4% / 188 MiB** during an answer, **33.7% / 356 MiB** during a simpler follow-up, and **40.0% / 273 MiB** during another answer. System free memory was approximately 30–31%; free disk approximately 6.6 GiB. These are point samples, not a performance ceiling or freeze guarantee. The runtime was stopped before the sequential regression check.
+
+**Remaining native gate:** coordinate mouse automation still returns `noWindowsAvailable`, so actual mouse clicks need a human walkthrough. Live proactive topics, active/idle steering race timing and source-session switching also need native confirmation; focused render/controller/race tests cover them but do not substitute for that gate. macOS Option shortcuts did not activate in this terminal; the visible menus remained usable by Tab and Enter. Do not mark the whole native walkthrough complete or merge #30 until these checks and teammate approval are recorded.
+
+After the fix, one sequential restart confirmed the long note draft retains the complete Save button. The newly saved note and answer survived restarting OpenCode. Fullscreen and split switching worked through Options. Ctrl+K stopped a visibly Thinking companion response while the completed coding task stayed idle. Reopening Learn during a read-only coding task did not interrupt that task: its 13 tests and recap completed. Topic suggestions were temporarily enabled, then restored off; this unchanged-code test run did not visibly produce a topic, so proactive topic generation is not marked verified. No extra instance was run concurrently.

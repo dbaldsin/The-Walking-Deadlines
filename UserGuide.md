@@ -143,3 +143,7 @@ Legacy follow-up recognition and optional presentation metadata restore older co
 The session race fix and backend are separate PRs; the UI PR depends on both. Review and merge in order: session race fix, restricted backend, then companion UI. Each has its own CI and review gate.
 
 New historical tool evidence excludes complete payloads for `.env*` paths referenced by tool input/metadata. This prevents those direct reads from entering new answers and saved evidence. It is not a general secret detector: arbitrary shell output or text copied by the user/model can still contain secrets. Existing saved explanations are not rewritten.
+
+### Latest native verification (October 6)
+
+A live VS Code keyboard walkthrough verified explanations, Simpler, Example, restored notebook entries, saving an answer and note, local source expansion, pane focus, exact steering preview, Back preserving the draft, and confirmed delivery followed by 13 passing calculator tests and the existing recap. Native screenshots and the remaining manual checks are recorded in [the walkthrough](docs/learning-companion-walkthrough.md#october-6-native-keyboard-walkthrough-and-notebook-correction). The note editor's clipped Save control was corrected with a focused regression. The full native gate remains open for mouse and the additional scenarios listed there; passing CI and teammate approval are still required.

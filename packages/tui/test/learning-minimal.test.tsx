@@ -127,6 +127,22 @@ test("Notebook Tab navigation cannot activate the hidden question editor or Ask 
   expect(view.asked).toHaveLength(0)
 })
 
+for (const width of [80, 140])
+  test(`long notebook drafts keep Save visible at ${width} columns`, async () => {
+    await using tmp = await tmpdir()
+    await using view = await learningView(tmp.path, width, 24)
+    await view.click("learning-notebook")
+    await view.click("learning-add")
+    await view.click("learning-add-note")
+    view.input().setText("Walkthrough note: cube multiplies a number by itself three times.")
+    await view.flush()
+    const composer = view.find("learning-composer")!
+    const save = view.find("learning-ask")!
+    expect(save.x + save.width).toBeLessThanOrEqual(composer.x + composer.width)
+    expect(view.input().x + view.input().width).toBeLessThanOrEqual(save.x)
+    expect(view.app.captureCharFrame()).toContain("Save")
+  })
+
 test("returning focus to Notebook cannot restore the hidden Ask button", async () => {
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 140, 24)

@@ -930,6 +930,8 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
             on:focused={() => setFocused("learning-input")}
             height={editor() === "steer" ? "100%" : 3}
             flexGrow={1}
+            flexShrink={1}
+            flexBasis={0}
             minWidth={1}
             backgroundColor={theme().backgroundElement}
             focusedBackgroundColor={theme().backgroundElement}
@@ -947,7 +949,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
             cursorStyle={config.cursor}
           />
           <Show when={editor() !== "steer"}>
-            <box alignSelf="flex-end">
+            <box alignSelf="flex-end" flexShrink={0}>
               <Action
                 id="learning-ask"
                 label={editor() === "question" ? (record()?.busy ? "Cancel" : "Ask") : saving() ? "Saving…" : "Save"}
