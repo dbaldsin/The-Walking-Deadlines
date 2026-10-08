@@ -1353,6 +1353,90 @@ it.instance("cancel records MessageAbortedError on interrupted process", () =>
   }),
 )
 
+it.instance(
+  "learning companion answers and cancellation do not interrupt active source coding",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const gate = yield* Deferred.make<void>()
+      yield* Effect.addFinalizer(() => Deferred.succeed(gate, void 0).pipe(Effect.asVoid))
+      const source = yield* sessions.create({ title: "Active coding source" })
+      const child = yield* sessions.create({
+        parentID: source.id,
+        title: "Learning companion",
+        agent: "learning-companion",
+        metadata: { "learning.role": "chat", "learning.source": source.id },
+      })
+
+      // Keep the source provider turn open so a serialized or parent-cancelling child cannot pass.
+      yield* llm.hold("Coding completed normally", deferredAsPromise(gate))
+      const coding = yield* prompt
+        .prompt({
+          sessionID: source.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "Continue the coding task" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* awaitWithTimeout(llm.wait(1), "source coding never reached the provider")
+      yield* waitForBusy(source.id)
+
+      yield* llm.text("This explains the completed change")
+      const explanation = yield* awaitWithTimeout(
+        prompt.prompt({
+          sessionID: child.id,
+          agent: "learning-companion",
+          model: ref,
+          parts: [{ type: "text", text: "Explain the completed change" }],
+        }),
+        "companion could not answer while source coding was active",
+      )
+      if (explanation.info.role !== "assistant") throw new Error("expected a companion assistant answer")
+      expect(explanation.info.error).toBeUndefined()
+      expect(
+        explanation.parts.some((part) => part.type === "text" && part.text === "This explains the completed change"),
+      ).toBe(true)
+      expect((yield* status.get(source.id)).type).toBe("busy")
+
+      yield* llm.hang
+      const pending = yield* prompt
+        .prompt({
+          sessionID: child.id,
+          agent: "learning-companion",
+          model: ref,
+          parts: [{ type: "text", text: "Give another explanation" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* awaitWithTimeout(llm.wait(3), "second companion answer never reached the provider")
+      yield* waitForBusy(child.id)
+      yield* prompt.cancel(child.id)
+      const cancelled = yield* awaitWithTimeout(Fiber.join(pending), "companion cancellation did not finish")
+      if (cancelled.info.role !== "assistant") throw new Error("expected an interrupted companion assistant answer")
+      expect(cancelled.info.error?.name).toBe("MessageAbortedError")
+      expect((yield* status.get(child.id)).type).toBe("idle")
+      expect((yield* status.get(source.id)).type).toBe("busy")
+      expect(
+        (yield* sessions.messages({ sessionID: source.id })).some(
+          (row) => row.info.role === "assistant" && row.info.error,
+        ),
+      ).toBe(false)
+
+      yield* Deferred.succeed(gate, void 0)
+      const completed = yield* awaitWithTimeout(Fiber.join(coding), "source coding did not complete normally")
+      if (completed.info.role !== "assistant") throw new Error("expected a source assistant answer")
+      expect(completed.info.error).toBeUndefined()
+      expect(completed.parts.some((part) => part.type === "text" && part.text === "Coding completed normally")).toBe(
+        true,
+      )
+      expect((yield* status.get(source.id)).type).toBe("idle")
+      expect(yield* llm.calls).toBe(3)
+    }),
+  10_000,
+)
+
 raceNoLLMServer.instance(
   "finalizes assistant when cancelled before processor creation completes",
   () =>
@@ -1858,6 +1942,60 @@ it.instance("structured completion resumes a pending steer and returns its struc
     expect(yield* llm.calls).toBe(2)
     expect(results[0].info.id).toBe(results[1].info.id)
     expect(results[0].info).toMatchObject({ role: "assistant", parentID: id, structured: { answer: "second" } })
+  }),
+)
+
+it.instance("learning history keeps saved snapshots without replaying old notebook injections", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const source = yield* sessions.create({ title: "Source" })
+    const chat = yield* sessions.create({
+      parentID: source.id,
+      agent: "learning-companion",
+      metadata: { "learning.source": source.id, "learning.role": "chat" },
+    })
+    yield* llm.text("First explanation.")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "learning-companion",
+      model: ref,
+      parts: [
+        {
+          type: "text",
+          text: "Explain validation",
+          metadata: {
+            "learning.context": { notes: [{ id: "removed-note", text: "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER" }] },
+          },
+        },
+        {
+          type: "text",
+          synthetic: true,
+          text: JSON.stringify({
+            savedNotes: [{ id: "removed-note", text: "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER" }],
+          }),
+        },
+      ],
+    })
+    expect(JSON.stringify((yield* llm.inputs)[0])).toContain("PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER")
+    yield* llm.text("Second explanation.")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "learning-companion",
+      model: ref,
+      parts: [
+        { type: "text", text: "Explain tests", metadata: { "learning.context": { notes: [] } } },
+        { type: "text", synthetic: true, text: JSON.stringify({ savedNotes: [] }) },
+      ],
+    })
+    const input = JSON.stringify((yield* llm.inputs).at(-1))
+    expect(input).not.toContain("PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER")
+    expect(input).toContain("First explanation.")
+    expect(input).toContain("Explain validation")
+    expect(JSON.stringify(yield* sessions.messages({ sessionID: chat.id }))).toContain(
+      "PRIVATE_NOTE_EXCLUDED_FROM_NEXT_ANSWER",
+    )
   }),
 )
 

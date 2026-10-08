@@ -284,6 +284,11 @@ const layer = Layer.effect(
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      if (input.agent.name === Agent.LEARNING_COMPANION) {
+        const s = yield* InstanceState.get(state)
+        // Select trusted objects before custom-name shadowing and plugin definition hooks.
+        return s.builtin.filter((tool) => ["read", "glob", "grep"].includes(tool.id))
+      }
       const filtered = (yield* all()).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
