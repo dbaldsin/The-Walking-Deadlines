@@ -201,3 +201,50 @@ bun test test/session/prompt.test.ts -t "learning recap"
 ### Reported mouse-input limitation (#34)
 
 A teammate reported that clicking the companion question input in a native VS Code split view did not allow typing while topics were paused. This is tracked in #34; a reliable workaround is not yet confirmed. The keyboard walkthrough verified chat, but it did not verify this mouse path. The reviewer recommended tracking this separately and Dion authorized integration with this known limitation. Additional native topic, source-session-switch and steering timing checks remain unverified.
+
+## Explain errors before fixing them — Rashid (#21)
+
+OpenCode now explains an error before attempting to fix it.
+
+When a command, test, build, or other tool action fails, OpenCode should:
+
+- explain the error in clear, student-friendly language
+- state the most likely cause based on the visible error
+- explain the error before making code or file changes
+- continue normally when no error occurs
+
+### How to try it
+
+1. Start OpenCode from `packages/opencode` using `bun dev`.
+2. Give OpenCode a task that causes a command or test to fail.
+3. After the failure, check that OpenCode explains what the error means and gives a likely cause before attempting to change the code.
+4. Give OpenCode a normal successful task and verify that it does not add an unnecessary error explanation.
+
+### Automated tests
+
+The automated test for this feature is located in:
+
+`packages/opencode/test/provider/transform.test.ts`
+
+The test named:
+
+`adds error explanation guidance to the final system prompt`
+
+verifies that the error explanation instructions are included in the final system prompt while preserving the existing custom agent instructions.
+
+The provider recording fixtures in:
+
+`packages/opencode/test/fixtures/recordings/session/`
+
+also verify that the updated system instructions are correctly included in provider requests.
+
+To run the relevant test:
+
+```sh
+cd packages/opencode
+bun test test/provider/transform.test.ts -t "adds error explanation guidance to the final system prompt"
+```
+
+### Why these tests are enough:
+
+The automated test checks the final assembled system prompt, which is the exact place where this feature is added. It verifies that the new error-explanation guidance is present while existing agent instructions are preserved. The provider recording fixtures also check that the updated prompt is correctly sent through supported provider request formats. Together, these tests cover both the prompt-building logic and its integration with provider requests.
