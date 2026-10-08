@@ -2,22 +2,45 @@ import type { TestResult } from "./learning-recap"
 
 const RUNNERS = [
   /^(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|:|$)/,
-  /^(?:bunx|npx|pnpm\s+dlx|yarn\s+dlx)\s+(?:jest|vitest|mocha|playwright\s+test)(?:\s|$)/,
-  /^(?:jest|vitest|mocha|pytest|tox|phpunit|rspec)(?:\s|$)/,
+  /^npm\s+t(?:\s|$)/,
+  /^(?:jest|vitest|mocha|pytest|tox|phpunit|rspec|ctest)(?:\s|$)/,
+  /^playwright\s+test(?:\s|$)/,
   /^python3?\s+-m\s+(?:pytest|unittest)(?:\s|$)/,
-  /^(?:go|cargo|dotnet|swift|mvn|gradle|\.\/gradlew)\s+test(?:\s|$)/,
+  /^(?:go|cargo|dotnet|swift|deno)\s+test(?:\s|$)/,
+  /^cargo\s+nextest\s+run(?:\s|$)/,
+  // Build tools accept goals/tasks and flags before the test task: "mvn clean test", "gradle :app:test".
+  // "-x test" excludes the task in Gradle, so it does not count.
+  /^(?:mvn|\.\/mvnw|gradle|\.\/gradlew)(?:\s+\S+)*?(?<!\s-x)\s+(?:\S*:)?test(?:\s|$)/,
+  // Only Node's own flags may come before --test; "node script.js --test" passes it to the script.
+  /^node(?:\s+-\S+)*\s+--test(?:\s|=|$)/,
+  /^(?:rails|bin\/rails|php\s+artisan)\s+test(?:\s|$)/,
   /^make\s+(?:test|check)(?:\s|$)/,
 ]
 
-// Lines that usually carry the runner's own totals, e.g. "4 pass", "Tests: 1 failed", "2 passed, 1 failed".
-const TOTALS = /\b\d+\s+(?:tests?\s+)?(?:pass(?:ed|ing)?|fail(?:ed|ing|ures?)?|skipped)\b/i
+// Commands that launch another command, e.g. "npx --yes jest", "uv run pytest", "timeout 60 bun test".
+const WRAPPER =
+  /^(?:npx|bunx|yarn\s+dlx|yarn|pnpm\s+(?:exec|dlx)|uv\s+run|poetry\s+run|pipenv\s+run|bundle\s+exec|timeout\s+\d+[smh]?)(?:\s+--?[\w-]+)*\s+/
+
+// Lines that usually carry the runner's own totals, e.g. "4 pass", "Tests: 1 failed", "2 passed, 1 failed",
+// or label-first totals from JUnit/Maven and dotnet, e.g. "Tests run: 3, Failures: 1", "Failed: 1, Passed: 3".
+const TOTALS = [
+  /\b\d+\s+(?:tests?\s+)?(?:pass(?:ed|ing)?|fail(?:ed|ing|ures?)?|skipped)\b/i,
+  /\b(?:tests\s+run|pass(?:ed)?|fail(?:ed|ures)?):\s*\d+/i,
+]
 
 const MAX_SUMMARY = 120
+
+/** The command itself plus each command it launches, with wrappers like "npx" or "uv run" removed one at a time. */
+function unwrap(part: string): string[] {
+  const next = part.replace(WRAPPER, "")
+  return next === part ? [part] : [part, ...unwrap(next)]
+}
 
 export function isTestCommand(command: string) {
   return command
     .split(/&&|\|\||;|\|/)
     .map((part) => part.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, ""))
+    .flatMap(unwrap)
     .some((part) => RUNNERS.some((runner) => runner.test(part)))
 }
 
@@ -33,7 +56,7 @@ export function fromShell(input: { command: string; exit: number | null | undefi
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-  const totals = lines.filter((item) => TOTALS.test(item)).slice(-2)
+  const totals = lines.filter((item) => TOTALS.some((totals) => totals.test(item))).slice(-2)
   const line = totals.length > 0 ? totals.join(", ") : lines.at(-1)
   const result: TestResult = { command: input.command, status }
   if (!line || line === "(no output)") return result

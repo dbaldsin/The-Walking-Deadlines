@@ -32,11 +32,88 @@ describe("isTestCommand", () => {
       expect(isTestCommand(command)).toBe(false)
     }
   })
+
+  test("recognizes runners for other languages and frameworks", () => {
+    for (const command of [
+      "npm t",
+      "vitest run",
+      "playwright test",
+      "deno test",
+      "node --test",
+      "node --experimental-test-coverage --test test/",
+      "cargo nextest run",
+      "dotnet test",
+      "ctest --output-on-failure",
+      "rails test",
+      "bin/rails test test/models",
+      "php artisan test",
+    ]) {
+      expect(isTestCommand(command)).toBe(true)
+    }
+  })
+
+  test("recognizes build tools that run other tasks before the tests", () => {
+    for (const command of [
+      "mvn test",
+      "mvn clean test",
+      "mvn -q -Dtest=UserTest test",
+      "./mvnw verify test",
+      "gradle test",
+      "gradle :app:test",
+      "./gradlew clean test --info",
+    ]) {
+      expect(isTestCommand(command)).toBe(true)
+    }
+  })
+
+  test("recognizes runners launched through a wrapper", () => {
+    for (const command of [
+      "npx --yes jest",
+      "bunx --bun vitest",
+      "pnpm exec vitest run",
+      "pnpm dlx jest",
+      "yarn jest",
+      "yarn dlx vitest",
+      "uv run pytest -q",
+      "poetry run pytest",
+      "pipenv run python -m pytest",
+      "bundle exec rspec spec/models",
+      "timeout 60 bun test",
+      "CI=1 npx jest",
+    ]) {
+      expect(isTestCommand(command)).toBe(true)
+    }
+  })
+
+  test("ignores other tasks of the same tools", () => {
+    for (const command of [
+      "cargo build",
+      "cargo nextest list",
+      "dotnet build",
+      "mvn clean package",
+      "gradle build -x test",
+      "./gradlew assemble",
+      "node script.js --test",
+      "node --version",
+      "deno run main.ts",
+      "rails server",
+      "php artisan migrate",
+      "npx prettier --check .",
+      "uv run python main.py",
+      "yarn install",
+      'git commit -m "jest"',
+      "echo pytest",
+    ]) {
+      expect(isTestCommand(command)).toBe(false)
+    }
+  })
 })
 
 describe("fromShell", () => {
   test("records a successful test run", () => {
-    expect(fromShell({ command: "bun test", exit: 0, output: "bun test v1.3\n\n 4 pass\n 0 fail\nRan 4 tests" })).toEqual({
+    expect(
+      fromShell({ command: "bun test", exit: 0, output: "bun test v1.3\n\n 4 pass\n 0 fail\nRan 4 tests" }),
+    ).toEqual({
       command: "bun test",
       status: "passed",
       summary: "4 pass, 0 fail",
@@ -47,6 +124,51 @@ describe("fromShell", () => {
     expect(
       fromShell({ command: "npm test", exit: 1, output: "FAIL src/a.test.ts\nTests: 1 failed, 3 passed, 4 total\n" }),
     ).toEqual({ command: "npm test", status: "failed", summary: "Tests: 1 failed, 3 passed, 4 total" })
+  })
+
+  test("reads label-first totals from Maven and dotnet", () => {
+    expect(
+      fromShell({
+        command: "mvn test",
+        exit: 1,
+        output:
+          "[INFO] Running UserTest\n[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0\n[INFO] BUILD FAILURE",
+      }),
+    ).toEqual({
+      command: "mvn test",
+      status: "failed",
+      summary: "[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0",
+    })
+    expect(
+      fromShell({
+        command: "dotnet test",
+        exit: 0,
+        output: "Build succeeded.\nPassed!  - Failed:     0, Passed:     4, Skipped:     0, Total:     4",
+      }),
+    ).toEqual({
+      command: "dotnet test",
+      status: "passed",
+      summary: "Passed!  - Failed:     0, Passed:     4, Skipped:     0, Total:     4",
+    })
+  })
+
+  test("records results from wrapped and build-tool runners", () => {
+    expect(fromShell({ command: "uv run pytest", exit: 1, output: "1 failed, 3 passed in 0.12s" })).toEqual({
+      command: "uv run pytest",
+      status: "failed",
+      summary: "1 failed, 3 passed in 0.12s",
+    })
+    expect(
+      fromShell({ command: "cargo nextest run", exit: 0, output: "Summary [0.2s] 5 tests run: 5 passed, 0 skipped" }),
+    ).toEqual({
+      command: "cargo nextest run",
+      status: "passed",
+      summary: "Summary [0.2s] 5 tests run: 5 passed, 0 skipped",
+    })
+    expect(fromShell({ command: "./gradlew clean test", exit: null })).toEqual({
+      command: "./gradlew clean test",
+      status: "not-run",
+    })
   })
 
   test("falls back to the last output line when there are no totals", () => {
