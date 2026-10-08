@@ -8,9 +8,8 @@ const RUNNERS = [
   /^python3?\s+-m\s+(?:pytest|unittest)(?:\s|$)/,
   /^(?:go|cargo|dotnet|swift|deno)\s+test(?:\s|$)/,
   /^cargo\s+nextest\s+run(?:\s|$)/,
-  // Build tools accept goals/tasks and flags before the test task: "mvn clean test", "gradle :app:test".
-  // "-x test" excludes the task in Gradle, so it does not count.
-  /^(?:mvn|\.\/mvnw|gradle|\.\/gradlew)(?:\s+\S+)*?(?<!\s-x)\s+(?:\S*:)?test(?:\s|$)/,
+  // Maven accepts other goals and flags before the test goal: "mvn clean test". Gradle is checked by gradleRunsTests.
+  /^(?:mvn|\.\/mvnw)(?:\s+\S+)*?\s+test(?:\s|$)/,
   // Only Node's own flags may come before --test; "node script.js --test" passes it to the script.
   /^node(?:\s+-\S+)*\s+--test(?:\s|=|$)/,
   /^(?:rails|bin\/rails|php\s+artisan)\s+test(?:\s|$)/,
@@ -41,7 +40,29 @@ export function isTestCommand(command: string) {
     .split(/&&|\|\||;|\|/)
     .map((part) => part.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, ""))
     .flatMap(unwrap)
-    .some((part) => RUNNERS.some((runner) => runner.test(part)))
+    .some((part) => RUNNERS.some((runner) => runner.test(part)) || gradleRunsTests(part))
+}
+
+/**
+ * Gradle runs a test task when one is requested ("gradle clean test", "gradle :app:test") and not excluded.
+ * "-x test" / "--exclude-task test" skip every "test" task wherever they appear, even after "test" was
+ * requested; an excluded ":app:test" only skips that project's task.
+ */
+function gradleRunsTests(part: string) {
+  const [tool, ...words] = part.split(/\s+/)
+  if (tool !== "gradle" && tool !== "./gradlew") return false
+  const excluded = words.flatMap((word, index) => {
+    if (word.startsWith("--exclude-task=")) return [word.slice("--exclude-task=".length)]
+    return word === "-x" || word === "--exclude-task" ? words.slice(index + 1, index + 2) : []
+  })
+  return words.some(
+    (word, index) =>
+      /^(?:\S*:)?test$/.test(word) &&
+      words[index - 1] !== "-x" &&
+      words[index - 1] !== "--exclude-task" &&
+      !excluded.includes(word) &&
+      !excluded.includes("test"),
+  )
 }
 
 /**

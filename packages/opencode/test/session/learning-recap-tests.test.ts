@@ -66,6 +66,32 @@ describe("isTestCommand", () => {
     }
   })
 
+  test("ignores Gradle commands that exclude the test task", () => {
+    for (const command of [
+      "gradle build -x test",
+      "gradle build --exclude-task test",
+      "gradle build --exclude-task=test",
+      "gradle test -x test",
+      "./gradlew -x test clean test",
+      "./gradlew :app:test --exclude-task :app:test",
+      "gradle :app:test -x test",
+      "timeout 600 ./gradlew test --exclude-task test",
+    ]) {
+      expect(isTestCommand(command)).toBe(false)
+    }
+  })
+
+  test("still recognizes Gradle test runs when a different task is excluded", () => {
+    for (const command of [
+      "gradle test -x lint",
+      "./gradlew build --exclude-task javadoc test",
+      "gradle test -x :app:test",
+      "./gradlew test --tests UserTest",
+    ]) {
+      expect(isTestCommand(command)).toBe(true)
+    }
+  })
+
   test("recognizes runners launched through a wrapper", () => {
     for (const command of [
       "npx --yes jest",
