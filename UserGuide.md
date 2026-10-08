@@ -45,6 +45,25 @@ bun test test/session/learning-recap*.test.ts
 bun test test/session/prompt.test.ts -t "learning recap"
 ```
 
+### Supported test runners (#36)
+
+The Tests section recognizes test runs across common languages, not just JavaScript:
+
+| Ecosystem | Recognized commands |
+| --- | --- |
+| JavaScript / TypeScript | `bun test`, `npm test` / `npm t`, `pnpm test`, `yarn test`, `jest`, `vitest`, `mocha`, `playwright test`, `deno test`, `node --test` |
+| Python | `pytest`, `python -m pytest`, `python -m unittest`, `tox` |
+| Go / Rust / Swift / C++ | `go test`, `cargo test`, `cargo nextest run`, `swift test`, `ctest` |
+| Java / Kotlin / .NET | `mvn test`, `./mvnw test`, `gradle test`, `./gradlew test`, `dotnet test` |
+| Ruby / PHP | `rspec`, `rails test`, `phpunit`, `php artisan test` |
+| Other | `make test`, `make check` |
+
+They are also recognized when another task runs first (`mvn clean test`, `./gradlew clean test`, `gradle :app:test`) or when launched through a wrapper: `npx`, `bunx`, `yarn`, `pnpm exec`/`dlx`, `yarn dlx`, `uv run`, `poetry run`, `pipenv run`, `bundle exec`, or `timeout <seconds>`. For example, `uv run pytest -q` and `npx --yes jest` both count. Other tasks of the same tools are not test runs, so `cargo build`, `mvn clean package`, `gradle build -x test` (which skips tests), `node script.js --test`, and `echo pytest` do not appear in the recap. For Maven/JUnit and dotnet, the summary uses the runner's totals line (for example `Tests run: 3, Failures: 1, Errors: 0, Skipped: 0`).
+
+**How to try it:** in any project that uses one of these runners, ask opencode to run its tests with a wrapper, e.g. *"Run `uv run pytest -q`"* or *"Run `./gradlew clean test`"*. The final response's recap lists the command under **Tests** with passed/failed status. Then ask *"Add a comment to one file and run `cargo build`"* (or another non-test task). The recap lists the edited file, and its Tests section says "No tests were run during this task."
+
+**Automated tests:** `packages/opencode/test/session/learning-recap-tests.test.ts` checks every runner and wrapper listed above and the non-test commands that must be ignored. It also checks that results from wrapped and build-tool runners keep passed/failed/not-run status and that Maven and dotnet totals are used as summaries. Detection is a pure function of the command text, and the recap's rendering and session wiring are already covered by `learning-recap-render.test.ts` and `prompt.test.ts`. So checking each command pattern directly, with positive and negative examples for each tool, covers this change completely without running the real toolchains.
+
 ## Shared learning recap schema — Dion (#7, PR #23)
 
 The schema gives the team's file collector, decision explanation, test collector, and display one consistent data format. It does not generate explanations or run tests itself. `changedFiles`, `decisions`, and `tests` are optional when information is unavailable. Test results require a command and one of `passed`, `failed`, or `not-run`; a short summary is optional.
