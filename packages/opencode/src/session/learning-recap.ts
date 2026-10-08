@@ -9,6 +9,7 @@ export const TestResult = Schema.Struct({
   command: Schema.String,
   status: TestStatus,
   summary: optional(Schema.String),
+  failures: optional(Schema.Array(Schema.String)),
 }).annotate({ identifier: "LearningRecapTestResult" })
 export interface TestResult extends Schema.Schema.Type<typeof TestResult> {}
 

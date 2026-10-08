@@ -28,7 +28,24 @@ const TOTALS = [
   /\b(?:tests\s+run|pass(?:ed)?|fail(?:ed|ures)?):\s*\d+/i,
 ]
 
+// Lines that name one failing test, as runners print them: bun "(fail) suite > name [1.2ms]", jest "● suite › name",
+// vitest "FAIL  file > suite > name", pytest "FAILED file::name - reason", go "--- FAIL: TestName (0.00s)",
+// cargo "test name ... FAILED" (or "name --- FAILED" with -q). Jest also uses "●" for suite-level errors and console output, which are not tests.
+const FAILURES = [
+  /^\(fail\)\s+(.+?)(?:\s+\[[\d.]+\s*m?s\])?$/,
+  /^●\s+(?!Test suite failed to run$|Console$)(.+)$/,
+  /^FAIL\s+(\S+\s+>\s+.+)$/,
+  /^FAILED\s+(\S+)/,
+  /^--- FAIL:\s+(\S+)/,
+  /^(?:test\s+)?(\S+)\s+(?:\.\.\.|---)\s+FAILED$/,
+]
+
+// Per-test marks from verbose reporters (jest "✕ name (5 ms)", vitest "× name 5ms"). They are only used when no line
+// above names a failure, because jest prints both forms for the same test.
+const FAILURE_MARK = /^[✕×✗]\s+(.+?)(?:\s+\(?\d+(?:\.\d+)?\s*m?s\)?)?$/
+
 const MAX_SUMMARY = 120
+const MAX_FAILURES = 5
 
 /** The command itself plus each command it launches, with wrappers like "npx" or "uv run" removed one at a time. */
 function unwrap(part: string): string[] {
@@ -58,9 +75,16 @@ export function fromShell(input: { command: string; exit: number | null | undefi
     .filter(Boolean)
   const totals = lines.filter((item) => TOTALS.some((totals) => totals.test(item))).slice(-2)
   const line = totals.length > 0 ? totals.join(", ") : lines.at(-1)
-  const result: TestResult = { command: input.command, status }
+  const failures = status === "failed" ? failingTests(lines) : []
+  const result: TestResult = { command: input.command, status, ...(failures.length > 0 && { failures }) }
   if (!line || line === "(no output)") return result
   return { ...result, summary: line.length > MAX_SUMMARY ? line.slice(0, MAX_SUMMARY - 3) + "..." : line }
+}
+
+/** Names of the failing tests in a run's output, each listed once, in the order the runner printed them. */
+function failingTests(lines: string[]) {
+  const named = lines.flatMap((line) => FAILURES.flatMap((pattern) => pattern.exec(line)?.[1] ?? []))
+  return [...new Set(named.length > 0 ? named : lines.flatMap((line) => FAILURE_MARK.exec(line)?.[1] ?? []))]
 }
 
 /** Collects test results from a task's shell calls, skipping commands that were not tests. */
@@ -71,7 +95,15 @@ export function collect(calls: ReadonlyArray<Parameters<typeof fromShell>[0]>) {
 /** Recap-ready lines for the tests section, with a clear message when no tests were run. */
 export function format(tests: ReadonlyArray<TestResult> | undefined) {
   if (!tests || tests.length === 0) return ["No tests were run during this task."]
-  return tests.map((test) => `${test.command}: ${test.status}${test.summary ? ` (${test.summary})` : ""}`)
+  return tests.map((test) => {
+    // Failing test names become a nested list under their command once render() adds the outer "- ".
+    const failures = test.failures ?? []
+    return [
+      `${test.command}: ${test.status}${test.summary ? ` (${test.summary})` : ""}`,
+      ...failures.slice(0, MAX_FAILURES).map((name) => `  - ${name}`),
+      ...(failures.length > MAX_FAILURES ? [`  - …and ${failures.length - MAX_FAILURES} more`] : []),
+    ].join("\n")
+  })
 }
 
 export * as LearningRecapTests from "./learning-recap-tests"
