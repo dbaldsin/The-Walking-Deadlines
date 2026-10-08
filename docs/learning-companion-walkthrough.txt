@@ -1,0 +1,139 @@
+LEARNING COMPANION — ACTUAL TERMINAL TEXT RECORDING
+Date: 2026-10-01
+Environment: macOS 15.7.3; Bun 1.3.11; OpenAI GPT-5.6 Sol
+Checkout: learning-companion
+Demo: disposable calculator.ts + calculator.test.ts
+Format: excerpts of actual terminal text captures, not native screenshots.
+Terminal lines below are verbatim except [coding-session] redaction; sizes labelled.
+[omitted] marks excluded lines. Local paths and private notebook data are excluded.
+Reproduce: run bun dev from packages/opencode; follow UserGuide.md.
+
+FRAME 1 — Save confirmation; source: live-notebook-save.txt (80x24)
+     - Full bun test: 1 passed, 0 failed
+
+     Learning Recap                                    ┃                     ┃
+                                                       ┃  Saved to notebook  ┃
+     Files changed                                     ┃                     ┃
+[omitted: companion answer and internal evidence details]
+  Ask a project question…
+
+  Enter ask · shift+enter newline · pg↑/↓ scroll · ^k cancel
+
+FRAME 2 — Approval preview; source: live-steering-preview.txt (80x24)
+  ● Learning companion · Following                                   esc close
+  Chat  Notebook (ctrl+n)  Pause
+[omitted: answer and completed evidence references]
+  Simpler ^1  Example ^2  More ^3  Save ^s  Send to coding agent ^g          ▄
+  Destination: Fixing double test failure · [coding-session]
+
+  In `calculator.test.ts`, add exactly one test named `double handles zero`
+  containing `expect(double(0)).toBe(0)`, then run `bun test calculator.test.
+  ts` and report the result.
+  Enter: Approve and send · select Chat to discard preview
+
+FRAME 3 — Edited preview; source: live-steering-edited.txt (80x24)
+  ● Learning companion · Following                                   esc close
+  Chat  Notebook (ctrl+n)  Pause
+[omitted: answer and completed evidence references]
+  Simpler ^1  Example ^2  More ^3  Save ^s  Send to coding agent ^g          ▄
+  Destination: Fixing double test failure · [coding-session]
+
+  Please In `calculator.test.ts`, add exactly one test named `double handles
+  zero` containing `expect(double(0)).toBe(0)`, then run `bun test calculator.
+  test.ts` and report the result.
+  Enter: Approve and send · select Chat to discard preview
+
+FRAME 4 — Confirmed delivery; source: live-delivery-sent.txt (80x24)
+  ● Learning companion · Topic ready                                 esc close
+  Chat  Notebook (ctrl+n)  Pause
+  [5] Completed read · learning-companion/demo/calculator.ts
+  [6] Completed read · learning-companion/demo/calculator.test.ts
+  [10] Completed apply_patch · calculator.ts
+
+  Topic: What regression can `double(0)` catch that the existing `double(3)`
+  test might miss? (select to ask)
+  Dismiss topic
+  Newer changes available · Update (ctrl+u)
+  Simpler ^1  Example ^2  More ^3  Save ^s  Send to coding agent ^g          ▄
+  Instruction: Sent
+  Ask a project question…
+
+  Enter ask · shift+enter newline · pg↑/↓ scroll · ^k cancel
+
+DELIVERY CHECK — sanitized fields from live-delivery-proof.json
+count: 1
+instruction text:
+Please In `calculator.test.ts`, add exactly one test named `double handles zero` containing `expect(double(0)).toBe(0)`, then run `bun test calculator.test.ts` and report the result.
+Session, message and proposal identifiers omitted.
+
+FRAME 5 — Coding draft retained; source: live-main-draft.txt (80x24)
+Early capture before structured-response repair; its Error badge is retained.
+     Learning Recap
+[omitted: file list]
+     Tests
+
+     - bun test calculator.test.ts: failed (0 pass, 1 fail)
+     - bun test calculator.test.ts: passed (1 pass, 0 fail)
+     - bun test: passed (1 pass, 0 fail)
+
+     ▣  Build · GPT-5.6 Sol · 49.9s
+
+  ┃
+  ┃  Draft: add a boundary test later.
+  ┃
+  ┃  Build · GPT-5.6 Sol OpenAI                              ● Learn · Error
+[omitted: footer containing local path]
+
+FRAME 6 — Coding result and quiet topic; source: live-wide-topic.txt
+Recorded after resize from 80x24; content retained 80-column width.
+This frame verifies the result/topic state, not the wider layout.
+     Added exactly one test named double handles zero.
+
+     bun test calculator.test.ts result: 2 passed, 0 failed.
+
+     Learning Recap
+
+     Files changed
+
+     - calculator.test.ts (modified, +4/-0)
+
+     Tests
+
+     - bun test calculator.test.ts: passed (2 pass, 0 fail)
+
+     ▣  Build · GPT-5.6 Sol · 1m 10s
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · GPT-5.6 Sol OpenAI                        ● Learn · Topic ready
+[omitted: footer containing local path and blank rows]
+
+FRAME 7 — Fresh 140x36 launch; source: live-wide-overlay.txt
+Previous companion chat restored after restart; older answer remains unchanged.
+  ┃  Ran 2 t ● Learning companion · Following                                                                         esc close
+  ┃          Chat  Notebook (ctrl+n)  Pause
+[omitted: older answer, calculator evidence and conversation]
+  ┃          Newer changes available · Update (ctrl+u)
+  ┃          Simpler ^1  Example ^2  More ^3  Save ^s  Send to coding agent ^g                                                ▄
+  ┃          Ask a project question…
+[omitted: footer containing local path]
+
+FRAME 8 — Notebook after restart; source: live-wide-notebook.txt (140x36)
+               note · 10/1/2026
+[omitted: private saved note text]
+  ┃          Add note  Add goal                                                                                               █
+  ┃          Ask a project question…
+
+FRAME 9 — New goal saved; source: live-wide-goal.txt (140x36)
+               note · 10/1/2026
+[omitted: private saved note text]
+               goal · 10/1/2026
+[omitted: private goal text]
+  ┃          Add note  Add goal                                                                                               █
+  ┃          Ask a project question…
+[omitted: footer containing local path]
+
+Operator also exercised Chat, Simpler, Example and adding a personal note.
+Standalone frames for those actions were not retained in this recording.
+CI, teammate review and merge are not established by this local recording.

@@ -55,6 +55,7 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
+import { isLearningSession } from "../../util/session"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
@@ -82,6 +83,7 @@ import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
+import { SessionLayout } from "../../component/session-layout"
 
 addDefaultParsers(parsers.parsers)
 
@@ -183,6 +185,7 @@ export function Session() {
     await writeFile(file, content)
   }
   const pluginRuntime = usePluginRuntime()
+  const dialog = useDialog()
   const route = useRouteData("session")
   const { navigate } = useRoute()
   const sync = useSync()
@@ -207,7 +210,7 @@ export function Session() {
   const children = createMemo(() => {
     const parentID = session()?.parentID ?? session()?.id
     return sync.data.session
-      .filter((x) => x.parentID === parentID || x.id === parentID)
+      .filter((x) => !isLearningSession(x) && (x.parentID === parentID || x.id === parentID))
       .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
@@ -270,13 +273,14 @@ export function Session() {
 
   const wide = createMemo(() => dimensions().width > 120)
   const sidebarVisible = createMemo(() => {
+    if (dialog.splitWidth) return false
     if (session()?.parentID) return false
     if (sidebarOpen()) return true
     if (sidebar() === "auto" && wide()) return true
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - dialog.splitWidth - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -352,7 +356,6 @@ export function Session() {
     r.set(route.prompt)
   }
   const keymap = useOpencodeKeymap()
-  const dialog = useDialog()
   const renderer = useRenderer()
 
   event.on("session.status", (evt) => {
@@ -1175,8 +1178,17 @@ export function Session() {
           tui: tuiConfig,
         }}
       >
-        <box flexDirection="row" flexGrow={1} minHeight={0}>
+        <SessionLayout>
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+            <Show when={dialog.splitWidth}>
+              <text fg={dialog.blocking ? theme.textMuted : theme.accent} flexShrink={0} wrapMode="none">
+                <b>{dialog.blocking ? "○" : "●"} Coding agent</b>
+                <span style={{ fg: theme.textMuted }}>
+                  {" "}
+                  · {Locale.truncate(session()?.title ?? "", Math.max(1, contentWidth() - 16))}
+                </span>
+              </text>
+            </Show>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -1356,7 +1368,7 @@ export function Session() {
               </Match>
             </Switch>
           </Show>
-        </box>
+        </SessionLayout>
       </context.Provider>
     </LocationProvider>
   )
