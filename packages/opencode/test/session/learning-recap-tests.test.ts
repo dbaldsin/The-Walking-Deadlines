@@ -245,3 +245,131 @@ describe("collect and format", () => {
     expect(format(undefined)).toEqual(["No tests were run during this task."])
   })
 })
+
+describe("failing test names", () => {
+  test("lists failing tests from bun output", () => {
+    const output = [
+      "bun test v1.4.2",
+      "a.test.ts:",
+      "error: expect(received).toBe(expected)",
+      "(fail) math > adds [0.12ms]",
+      "(pass) math > ok [0.02ms]",
+      "(fail) top level fails [0.28ms]",
+      " 1 pass",
+      " 2 fail",
+    ].join("\n")
+    expect(fromShell({ command: "bun test", exit: 1, output })?.failures).toEqual(["math > adds", "top level fails"])
+  })
+
+  test("lists failing tests from jest output without duplicating verbose marks", () => {
+    const output = [
+      "FAIL src/math.test.ts",
+      "  math",
+      "    ✓ subtracts (2 ms)",
+      "    ✕ adds (5 ms)",
+      "  ● math › adds",
+      "    expect(received).toBe(expected)",
+      "  ● Console",
+      "Tests: 1 failed, 1 passed, 2 total",
+    ].join("\n")
+    expect(fromShell({ command: "npx jest", exit: 1, output })?.failures).toEqual(["math › adds"])
+  })
+
+  test("skips jest suite-level errors that are not tests", () => {
+    const output = ["FAIL src/broken.test.ts", "  ● Test suite failed to run", "Tests: 0 total"].join("\n")
+    expect(fromShell({ command: "npx jest", exit: 1, output })?.failures).toBeUndefined()
+  })
+
+  test("lists failing tests from vitest output", () => {
+    const output = [
+      " ❯ src/math.test.ts (2 tests | 1 failed) 4ms",
+      "   × adds 3ms",
+      "⎯⎯⎯ Failed Tests 1 ⎯⎯⎯",
+      " FAIL  src/math.test.ts > math > adds",
+      "AssertionError: expected 2 to be 3",
+      " Tests  1 failed | 1 passed (2)",
+    ].join("\n")
+    expect(fromShell({ command: "vitest run", exit: 1, output })?.failures).toEqual(["src/math.test.ts > math > adds"])
+  })
+
+  test("falls back to verbose failure marks when there is no failure summary", () => {
+    const output = ["✓ subtracts 1ms", "× adds 3ms", "× divides by zero 1ms", "2 failed, 1 passed"].join("\n")
+    expect(fromShell({ command: "vitest run", exit: 1, output })?.failures).toEqual(["adds", "divides by zero"])
+  })
+
+  test("lists failing tests from pytest, go, and cargo output", () => {
+    expect(
+      fromShell({
+        command: "pytest -q",
+        exit: 1,
+        output: [
+          "FAILED tests/test_math.py::test_adds - assert 2 == 3",
+          "FAILED tests/test_math.py::test_div[0] - ZeroDivisionError",
+          "2 failed, 3 passed in 0.12s",
+        ].join("\n"),
+      })?.failures,
+    ).toEqual(["tests/test_math.py::test_adds", "tests/test_math.py::test_div[0]"])
+    expect(
+      fromShell({
+        command: "go test ./...",
+        exit: 1,
+        output: "--- FAIL: TestAdds (0.00s)\n    math_test.go:8: got 2\nFAIL\nFAIL\texample/math\t0.01s",
+      })?.failures,
+    ).toEqual(["TestAdds"])
+    expect(
+      fromShell({
+        command: "cargo test",
+        exit: 101,
+        output: "test tests::ok ... ok\ntest tests::adds ... FAILED\ntest result: FAILED. 1 passed; 1 failed",
+      })?.failures,
+    ).toEqual(["tests::adds"])
+    expect(
+      fromShell({
+        command: "cargo test -q",
+        exit: 101,
+        output: "tests::adds --- FAILED\ntest result: FAILED. 1 passed",
+      })?.failures,
+    ).toEqual(["tests::adds"])
+  })
+
+  test("lists each failing test once even when the runner repeats it", () => {
+    const output = "(fail) adds [0.1ms]\n1 fail\n\n(fail) adds [0.1ms]\n1 fail"
+    expect(fromShell({ command: "bun test", exit: 1, output })?.failures).toEqual(["adds"])
+  })
+
+  test("keeps passed and not-run results unchanged", () => {
+    expect(fromShell({ command: "bun test", exit: 0, output: "(fail) flaky retried [1ms]\n3 pass" })).toEqual({
+      command: "bun test",
+      status: "passed",
+      summary: "3 pass",
+    })
+    expect(fromShell({ command: "bun test", exit: null, output: "(fail) adds [1ms]" })).toEqual({
+      command: "bun test",
+      status: "not-run",
+      summary: "(fail) adds [1ms]",
+    })
+  })
+
+  test("falls back to the summary line when no failing names can be parsed", () => {
+    expect(fromShell({ command: "make test", exit: 2, output: "make: *** [test] Error 2" })).toEqual({
+      command: "make test",
+      status: "failed",
+      summary: "make: *** [test] Error 2",
+    })
+  })
+
+  test("formats failing names as a nested list, at most five, and they satisfy the recap schema", () => {
+    const failures = ["a", "b", "c", "d", "e", "f", "g"]
+    const tests = [{ command: "bun test", status: "failed" as const, summary: "7 fail", failures }]
+    expect(() => Schema.decodeUnknownSync(LearningRecap.Info)({ tests })).not.toThrow()
+    expect(format(tests)).toEqual([
+      ["bun test: failed (7 fail)", "  - a", "  - b", "  - c", "  - d", "  - e", "  - …and 2 more"].join("\n"),
+    ])
+  })
+
+  test("does not add a remainder line for five or fewer failures", () => {
+    expect(format([{ command: "bun test", status: "failed", failures: ["a", "b"] }])).toEqual([
+      "bun test: failed\n  - a\n  - b",
+    ])
+  })
+})

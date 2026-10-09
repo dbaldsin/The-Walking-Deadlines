@@ -6,7 +6,11 @@ import { LearningRecapRender } from "@/session/learning-recap-render"
 describe("LearningRecapRender.fromParts", () => {
   test("collects completed bash calls as tests", () => {
     const parts = [
-      { type: "tool", tool: "bash", state: { status: "completed", title: "bun test", metadata: { exit: 0 }, output: "4 pass" } },
+      {
+        type: "tool",
+        tool: "bash",
+        state: { status: "completed", title: "bun test", metadata: { exit: 0 }, output: "4 pass" },
+      },
       {
         type: "tool",
         tool: "bash",
@@ -20,7 +24,11 @@ describe("LearningRecapRender.fromParts", () => {
 
   test("ignores non-bash tools and calls that are not completed", () => {
     const parts = [
-      { type: "tool", tool: "read", state: { status: "completed", title: "read package.json", metadata: {}, output: "{}" } },
+      {
+        type: "tool",
+        tool: "read",
+        state: { status: "completed", title: "read package.json", metadata: {}, output: "{}" },
+      },
       { type: "tool", tool: "bash", state: { status: "running", title: "bun test", metadata: {}, output: "" } },
       { type: "text", state: { status: "completed" } },
     ]
@@ -31,7 +39,13 @@ describe("LearningRecapRender.fromParts", () => {
     // A routine tool call like `ls` shouldn't get "No files changed / No tests
     // were run" boilerplate tacked on -- there's nothing to teach here, and
     // existing output for a turn like this must stay exactly as it was.
-    const parts = [{ type: "tool", tool: "bash", state: { status: "completed", title: "ls -la", metadata: { exit: 0 }, output: "" } }]
+    const parts = [
+      {
+        type: "tool",
+        tool: "bash",
+        state: { status: "completed", title: "ls -la", metadata: { exit: 0 }, output: "" },
+      },
+    ]
     expect(LearningRecapRender.fromParts(parts, [])).toEqual({})
   })
 
@@ -43,7 +57,9 @@ describe("LearningRecapRender.fromParts", () => {
   })
 
   test("treats a missing exit code as not-run", () => {
-    const parts = [{ type: "tool", tool: "bash", state: { status: "completed", title: "bun test", metadata: {}, output: "" } }]
+    const parts = [
+      { type: "tool", tool: "bash", state: { status: "completed", title: "bun test", metadata: {}, output: "" } },
+    ]
     expect(LearningRecapRender.fromParts(parts, []).tests).toEqual([{ command: "bun test", status: "not-run" }])
   })
 
@@ -75,6 +91,24 @@ describe("LearningRecapRender.render", () => {
     })
     expect(text).toBe(
       "## Learning Recap\n\n### Files changed\n- src/foo.ts (modified, +4/-1)\n\n### Tests\n- bun test: passed",
+    )
+  })
+
+  test("lists failing test names from a bash call under that command", () => {
+    const parts = [
+      {
+        type: "tool",
+        tool: "bash",
+        state: {
+          status: "completed",
+          title: "bun test",
+          metadata: { exit: 1 },
+          output: "(fail) math > adds [0.12ms]\n(fail) top level fails [0.28ms]\n 1 pass\n 2 fail",
+        },
+      },
+    ]
+    expect(LearningRecapRender.render(LearningRecapRender.fromParts(parts, []))).toBe(
+      "## Learning Recap\n\n### Files changed\n- No files were changed during this task.\n\n### Tests\n- bun test: failed (1 pass, 2 fail)\n  - math > adds\n  - top level fails",
     )
   })
 
