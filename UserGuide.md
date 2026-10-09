@@ -45,6 +45,53 @@ bun test test/session/learning-recap*.test.ts
 bun test test/session/prompt.test.ts -t "learning recap"
 ```
 
+### Supported test runners (#36)
+
+The Tests section recognizes test runs across common languages, not just JavaScript:
+
+| Ecosystem | Recognized commands |
+| --- | --- |
+| JavaScript / TypeScript | `bun test`, `npm test` / `npm t`, `pnpm test`, `yarn test`, `jest`, `vitest`, `mocha`, `playwright test`, `deno test`, `node --test` |
+| Python | `pytest`, `python -m pytest`, `python -m unittest`, `tox` |
+| Go / Rust / Swift / C++ | `go test`, `cargo test`, `cargo nextest run`, `swift test`, `ctest` |
+| Java / Kotlin / .NET | `mvn test`, `./mvnw test`, `gradle test`, `./gradlew test`, `dotnet test` |
+| Ruby / PHP | `rspec`, `rails test`, `phpunit`, `php artisan test` |
+| Other | `make test`, `make check` |
+
+They are also recognized when another task runs first (`mvn clean test`, `./gradlew clean test`, `gradle :app:test`) or when launched through a wrapper: `npx`, `bunx`, `yarn`, `pnpm exec`/`dlx`, `yarn dlx`, `uv run`, `poetry run`, `pipenv run`, `bundle exec`, or `timeout <seconds>`. For example, `uv run pytest -q` and `npx --yes jest` both count. Other tasks of the same tools are not test runs, so `cargo build`, `mvn clean package`, `gradle build -x test` or `--exclude-task test` (which skip the tests, even if `test` is also requested), `node script.js --test`, and `echo pytest` do not appear in the recap. For Maven/JUnit and dotnet, the summary uses the runner's totals line (for example `Tests run: 3, Failures: 1, Errors: 0, Skipped: 0`).
+
+**How to try it:** in any project that uses one of these runners, ask opencode to run its tests with a wrapper, e.g. *"Run `uv run pytest -q`"* or *"Run `./gradlew clean test`"*. The final response's recap lists the command under **Tests** with passed/failed status. Then ask *"Add a comment to one file and run `cargo build`"* (or another non-test task). The recap lists the edited file, and its Tests section says "No tests were run during this task."
+
+**Automated tests:** `packages/opencode/test/session/learning-recap-tests.test.ts` checks every runner and wrapper listed above and the non-test commands that must be ignored. It also checks that results from wrapped and build-tool runners keep passed/failed/not-run status and that Maven and dotnet totals are used as summaries. Detection is a pure function of the command text, and the recap's rendering and session wiring are already covered by `learning-recap-render.test.ts` and `prompt.test.ts`. So checking each command pattern directly, with positive and negative examples for each tool, covers this change completely without running the real toolchains.
+
+### Failing test names (#35)
+
+When a test run fails, the recap lists which tests failed under that command, so you can see what broke without scrolling back through the shell output:
+
+```
+### Tests
+- bun test: failed (1 pass, 2 fail)
+  - math > adds
+  - top level fails
+```
+
+Names are read from the failure lines each runner prints:
+
+| Runner | Failure line it reads | Name shown |
+| --- | --- | --- |
+| `bun test` | `(fail) math > adds [0.12ms]` | `math > adds` |
+| jest | `● math › adds` | `math › adds` |
+| vitest | `FAIL  src/math.test.ts > math > adds` | `src/math.test.ts > math > adds` |
+| pytest | `FAILED tests/test_math.py::test_adds - assert 2 == 3` | `tests/test_math.py::test_adds` |
+| `go test` | `--- FAIL: TestAdds (0.00s)` | `TestAdds` |
+| `cargo test` | `test tests::adds ... FAILED` (or `tests::adds --- FAILED` with `-q`) | `tests::adds` |
+
+If a jest or vitest run prints only per-test marks (`✕ adds (5 ms)` / `× adds 3ms`), those are used instead. Each failing test is listed once, even if the runner prints it twice. At most five are shown; the rest are summarized as "…and N more". Passed and not-run results never list names. If no names can be found in the output, for example from `make test`, the entry shows just the summary line, as before.
+
+**How to try it:** in this repository, add a test that fails, such as `test("adds", () => expect(1 + 1).toBe(3))` in a new `packages/opencode/test/demo.test.ts`. Then ask opencode to *"Run `bun test test/demo.test.ts` from `packages/opencode`"*. The recap's Tests section shows `failed` with `adds` nested underneath. Fix the test and run it again: the entry shows `passed` with no names. Delete the demo file when you're done.
+
+**Automated tests:** the `failing test names` block in `packages/opencode/test/session/learning-recap-tests.test.ts` parses real bun and cargo output (captured from actual failing runs) and representative jest, vitest, pytest, and go output. It also covers jest's suite-level `●` errors that are not tests, the verbose-mark fallback, duplicate names, the five-name limit and its "…and N more" line, unchanged passed/not-run results, the summary-only fallback, and schema validity. `packages/opencode/test/session/learning-recap-render.test.ts` checks the end-to-end path from a failing bash call to the nested list in the final markdown. Together these cover every #35 acceptance criterion. Parsing is a pure function of the output text, so testing it on runner output is enough without installing each runner in CI.
+
 ## Shared learning recap schema — Dion (#7, PR #23)
 
 The schema gives the team's file collector, decision explanation, test collector, and display one consistent data format. It does not generate explanations or run tests itself. `changedFiles`, `decisions`, and `tests` are optional when information is unavailable. Test results require a command and one of `passed`, `failed`, or `not-run`; a short summary is optional.
