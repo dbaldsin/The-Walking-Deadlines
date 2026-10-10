@@ -9,15 +9,39 @@ export type Explanation = {
   why?: string
 }
 
-type Token = {
-  value: string
-  op: boolean
+type Redirect = {
+  stream: string
+  append: boolean
+  read: boolean
+  target?: string
+}
+
+type Step = {
+  words: string[]
+  redirects: Redirect[]
 }
 
 const MAX_STEPS = 3
 
+// Quoted strings stay one token; `&&`, `||`, `;`, `|` and `&` separate steps.
+// File descriptor duplications such as `2>&1` are matched first so they can be
+// dropped; every other redirection operator takes the next word as its target.
+const TOKEN =
+  /(\d*[<>]&(?:\d+|-))|(&>>?|>&|\d*>>|\d*>\|?|\d*<)|"((?:[^"\\]|\\.)*)"|'([^']*)'|(&&|\|\||[;|&\n])|([^\s"';|&<>]+)/g
+
+// Command and process substitution, heredocs, and subshells can hide arbitrary
+// side effects, so commands using them are not summarized step by step.
+const UNSAFE = /\$\(|`|[<>]\(|<<|(^|[\s;&|])\(/
+
+// Redirecting output to these does not change any file.
+const SINKS = ["/dev/null", "/dev/stdout", "/dev/stderr"]
+
+const UNSUMMARIZED = "Runs a shell command that is too complex to summarize safely. Review the full command before allowing it"
+
 export function shell(command: string, reason?: string): Explanation | undefined {
-  const steps = segments(command).map(describe).filter((item) => item.length > 0)
+  const parsed = parse(command)
+  if (!parsed) return { what: UNSUMMARIZED, why: why(reason) }
+  const steps = parsed.map(summarize).filter((item) => item.length > 0)
   if (steps.length === 0) return undefined
   const shown = steps.slice(0, MAX_STEPS).map((item, index) => (index === 0 ? item : lower(item)))
   const rest = steps.length - shown.length
@@ -39,24 +63,58 @@ function why(reason?: string) {
   return value ? value : undefined
 }
 
-function segments(command: string) {
-  // Quoted strings stay one token; `&&`, `||`, `;`, `|` and `&` separate steps.
-  // Redirections such as `> out.txt` or `2>&1` are consumed first and dropped.
-  const tokens = Array.from(
-    command.matchAll(/(\d*[<>]{1,2}&?\s*[^\s;|&]*)|"((?:[^"\\]|\\.)*)"|'([^']*)'|(&&|\|\||[;|&\n])|([^\s"';|&<>]+)/g),
-  )
-    .filter((match) => match[1] === undefined)
-    .map((match): Token => ({ value: match[2] ?? match[3] ?? match[4] ?? match[5] ?? "", op: match[4] !== undefined }))
-  return tokens
-    .reduce<string[][]>(
-      (acc, token) => {
-        if (token.op) return [...acc, []]
-        acc[acc.length - 1].push(token.value)
+function parse(command: string) {
+  if (UNSAFE.test(command)) return undefined
+  // Anything the tokenizer skips, such as an unmatched quote, means the parse cannot be trusted.
+  if (command.replace(TOKEN, "").trim()) return undefined
+  const steps = Array.from(command.matchAll(TOKEN)).reduce<Step[]>(
+    (acc, match) => {
+      const current = acc[acc.length - 1]
+      if (match[1] !== undefined) return acc
+      if (match[5] !== undefined) return [...acc, { words: [], redirects: [] }]
+      if (match[2] !== undefined) {
+        current.redirects.push(redirect(match[2]))
         return acc
-      },
-      [[]],
-    )
-    .filter((words) => words.length > 0)
+      }
+      const value = match[3] ?? match[4] ?? match[6] ?? ""
+      const pending = current.redirects.find((item) => item.target === undefined)
+      if (pending) pending.target = value
+      else current.words.push(value)
+      return acc
+    },
+    [{ words: [], redirects: [] }],
+  )
+  // A redirection with no target (`cat a >` or `cat a > ; ls`) is not something we can describe.
+  if (steps.some((item) => item.redirects.some((entry) => entry.target === undefined))) return undefined
+  return steps.filter((item) => item.words.length > 0 || item.redirects.length > 0)
+}
+
+function redirect(op: string): Redirect {
+  const stream =
+    op.startsWith("&") || op === ">&"
+      ? "the output and error messages"
+      : op.startsWith("2")
+        ? "the error messages"
+        : "the output"
+  return { stream, append: op.includes(">>"), read: op.endsWith("<") }
+}
+
+function summarize(item: Step) {
+  const action = describe(item.words)
+  const writes = item.redirects.filter((entry) => !entry.read && !SINKS.includes(entry.target ?? ""))
+  if (writes.length === 0) return action
+  if (!action) {
+    return writes
+      .map((entry) => (entry.append ? `Creates ${entry.target} if it does not exist` : `Empties ${entry.target} (creating it if needed)`))
+      .map((text, index) => (index === 0 ? text : lower(text)))
+      .join(" and ")
+  }
+  const effects = writes.map((entry) =>
+    entry.append
+      ? `adds ${entry.stream} to the end of ${entry.target}`
+      : `writes ${entry.stream} to ${entry.target} (creating or overwriting it)`,
+  )
+  return `${action} and ${effects.join(" and ")}`
 }
 
 function describe(input: string[]): string {
@@ -93,6 +151,10 @@ function describe(input: string[]): string {
   if (cmd === "cd") return `Moves into the folder ${list || "your home folder"}`
   if (cmd === "pwd") return "Shows the current folder"
   if (cmd === "echo" || cmd === "printf") return "Prints text"
+  if (cmd === "tee") {
+    if (flags.some((flag) => flag === "-a" || flag === "--append")) return `Adds its input to the end of ${list}`
+    return `Writes its input to ${list} (creating or overwriting it)`
+  }
   if (cmd === "grep" || cmd === "rg") return `Searches for "${args[0] ?? ""}" in ${args.slice(1).join(" ") || "files"}`
   if (cmd === "find") return `Searches for files in ${args[0] ?? "the current folder"}`
   if (cmd === "curl" || cmd === "wget") return `Downloads data from ${args.find((arg) => arg.includes("://")) ?? list}`

@@ -37,9 +37,42 @@ describe("Translator.shell", () => {
     )
   })
 
-  test("ignores redirections and environment assignments", () => {
+  test("ignores environment assignments and redirections that do not touch files", () => {
     expect(Translator.shell("NODE_ENV=test bun test 2>&1")?.what).toBe("Runs the project's tests")
-    expect(Translator.shell("cat package.json > copy.json")?.what).toBe("Shows the contents of package.json")
+    expect(Translator.shell("bun test > /dev/null 2>&1")?.what).toBe("Runs the project's tests")
+    expect(Translator.shell("sort < names.txt")?.what).toBe("Runs the program `sort`")
+  })
+
+  test("describes files written by output redirection", () => {
+    expect(Translator.shell("cat package.json > copy.json")?.what).toBe(
+      "Shows the contents of package.json and writes the output to copy.json (creating or overwriting it)",
+    )
+    expect(Translator.shell("cat package.json >copy.json")?.what).toBe(
+      "Shows the contents of package.json and writes the output to copy.json (creating or overwriting it)",
+    )
+    expect(Translator.shell("echo done >> log.txt")?.what).toBe("Prints text and adds the output to the end of log.txt")
+    expect(Translator.shell("make 2> errors.log")?.what).toBe(
+      "Runs the program `make` and writes the error messages to errors.log (creating or overwriting it)",
+    )
+    expect(Translator.shell('bun run build &> "build output.log"')?.what).toBe(
+      'Runs the project script "build" and writes the output and error messages to build output.log (creating or overwriting it)',
+    )
+    expect(Translator.shell("> notes.txt")?.what).toBe("Empties notes.txt (creating it if needed)")
+    expect(Translator.shell("echo hi | tee out.txt")?.what).toBe(
+      "Prints text, then writes its input to out.txt (creating or overwriting it)",
+    )
+  })
+
+  test("falls back to a warning when the shell syntax cannot be summarized safely", () => {
+    const fallback = "Runs a shell command that is too complex to summarize safely. Review the full command before allowing it"
+    expect(Translator.shell("echo $(rm -rf dist)")?.what).toBe(fallback)
+    expect(Translator.shell("echo `whoami`")?.what).toBe(fallback)
+    expect(Translator.shell("cat > out.txt <<EOF\nhello\nEOF")?.what).toBe(fallback)
+    expect(Translator.shell("diff <(ls a) <(ls b)")?.what).toBe(fallback)
+    expect(Translator.shell("(cd dist && rm -rf assets)")?.what).toBe(fallback)
+    expect(Translator.shell('echo "unterminated > out.txt')?.what).toBe(fallback)
+    expect(Translator.shell("cat package.json >")?.what).toBe(fallback)
+    expect(Translator.shell("echo $(ls)", "List files")?.why).toBe("List files")
   })
 
   test("flags sudo", () => {
