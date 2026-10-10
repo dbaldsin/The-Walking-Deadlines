@@ -8,10 +8,16 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 
+export function dialogSplitWidth(width: number) {
+  return width >= 128 ? Math.min(86, Math.floor((width - 2) * 0.46)) : 0
+}
+
 export function Dialog(
   props: ParentProps<{
-    size?: "medium" | "large" | "xlarge"
+    size?: "medium" | "large" | "xlarge" | "fullscreen" | "split"
     onClose: () => void
+    onFocus?: () => void
+    active?: boolean
   }>,
 ) {
   const dimensions = useTerminalDimensions()
@@ -19,7 +25,11 @@ export function Dialog(
   const renderer = useRenderer()
 
   let dismiss = false
+  const split = () => props.size === "split" && dialogSplitWidth(dimensions().width) > 0
+  const full = () => props.size === "fullscreen" || props.size === "split"
   const width = () => {
+    if (split()) return dialogSplitWidth(dimensions().width)
+    if (full()) return dimensions().width - 2
     if (props.size === "xlarge") return 116
     if (props.size === "large") return 88
     return 60
@@ -37,17 +47,18 @@ export function Dialog(
         }
         props.onClose?.()
       }}
-      width={dimensions().width}
-      height={dimensions().height}
+      width={split() ? width() : dimensions().width}
+      height={split() ? dimensions().height - 2 : dimensions().height}
       alignItems="center"
       position="absolute"
       zIndex={3000}
-      paddingTop={dimensions().height / 4}
-      left={0}
-      top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      paddingTop={split() ? 0 : full() ? 1 : dimensions().height / 4}
+      left={split() ? dimensions().width - width() - 1 : 0}
+      top={split() ? 1 : 0}
+      backgroundColor={split() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
+        onMouseDown={() => props.onFocus?.()}
         onMouseUp={(e: { stopPropagation(): void }) => {
           // A selection release must bubble up to the copy-on-select handler in
           // DialogProvider; the backdrop's dismiss flag keeps it from closing the dialog.
@@ -56,9 +67,12 @@ export function Dialog(
           e.stopPropagation()
         }}
         width={width()}
+        height={full() ? dimensions().height - 2 : undefined}
         maxWidth={dimensions().width - 2}
         backgroundColor={theme.backgroundPanel}
-        paddingTop={1}
+        paddingTop={full() ? 0 : 1}
+        border={split() ? ["left"] : []}
+        borderColor={props.active === false ? theme.borderSubtle : theme.borderActive}
       >
         {props.children}
       </box>
@@ -72,14 +86,21 @@ function init() {
       element: JSX.Element
       onClose?: () => void
     }[],
-    size: "medium" as "medium" | "large" | "xlarge",
+    size: "medium" as "medium" | "large" | "xlarge" | "fullscreen" | "split",
+    focused: true,
   })
 
   const renderer = useRenderer()
+  const dimensions = useTerminalDimensions()
   const modeStack = useOpencodeModeStack()
+  const splitWidth = () => {
+    const width = dialogSplitWidth(dimensions().width)
+    return store.stack.length && store.size === "split" && width ? width + 1 : 0
+  }
+  const blocking = () => !!store.stack.length && (!splitWidth() || store.focused)
 
   createEffect(() => {
-    if (store.stack.length === 0) return
+    if (!blocking()) return
     const popMode = modeStack.push("modal")
     onCleanup(popMode)
   })
@@ -87,6 +108,7 @@ function init() {
   let focus: Renderable | null
   function refocus() {
     setTimeout(() => {
+      if (blocking()) return
       if (!focus) return
       if (focus.isDestroyed) return
       function find(item: Renderable) {
@@ -103,7 +125,7 @@ function init() {
   }
 
   useBindings(() => ({
-    enabled: store.stack.length > 0 && !renderer.getSelection()?.getSelectedText(),
+    enabled: blocking() && !renderer.getSelection()?.getSelectedText(),
     bindings: [
       {
         key: "escape",
@@ -144,6 +166,7 @@ function init() {
       batch(() => {
         setStore("size", "medium")
         setStore("stack", [])
+        setStore("focused", true)
       })
       refocus()
     },
@@ -156,6 +179,7 @@ function init() {
         if (item.onClose) item.onClose()
       }
       setStore("size", "medium")
+      setStore("focused", true)
       setStore("stack", [
         {
           element: input,
@@ -169,7 +193,21 @@ function init() {
     get size() {
       return store.size
     },
-    setSize(size: "medium" | "large" | "xlarge") {
+    get splitWidth() {
+      return splitWidth()
+    },
+    get blocking() {
+      return blocking()
+    },
+    focus() {
+      setStore("focused", true)
+    },
+    blur() {
+      if (!splitWidth()) return
+      setStore("focused", false)
+      refocus()
+    },
+    setSize(size: "medium" | "large" | "xlarge" | "fullscreen" | "split") {
       setStore("size", size)
     },
   }
@@ -213,7 +251,7 @@ export function DialogProvider(props: ParentProps) {
         onMouseUp={!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size}>
+          <Dialog onClose={() => value.clear()} onFocus={() => value.focus()} active={value.blocking} size={value.size}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>
