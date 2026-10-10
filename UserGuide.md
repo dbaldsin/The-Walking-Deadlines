@@ -52,7 +52,13 @@ If a category is empty, it says so ("No files were changed during this task." / 
 
 ### Layout examples
 
-This screenshot is from a real `bun dev` run of opencode in the terminal, using the failing demo test from [Failing test names (#35)](#failing-test-names-35). The task ran tests but changed no files, so **Files changed** shows the empty message, and the failed run lists the two failing tests underneath it.
+These screenshots are from real `bun dev` runs of opencode in the terminal.
+
+**A typical task.** This is the walkthrough in [How to try it](#how-to-try-it): one file was edited and the tests passed.
+
+![Learning Recap listing packages/opencode/README.md as modified and a passing bun test run](docs/images/learning-recap-basic.png)
+
+**A failed test run.** This uses the failing demo test from [Failing test names (#35)](#failing-test-names-35). The task ran tests but changed no files, so **Files changed** shows the empty message, and the failed run lists the two failing tests underneath it.
 
 ![Learning Recap for a failed bun test run, listing the failing tests "math > adds" and "top level fails"](docs/images/learning-recap-failing-names.png)
 
