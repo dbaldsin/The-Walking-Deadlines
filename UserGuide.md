@@ -50,6 +50,12 @@ If a category is empty, it says so ("No files were changed during this task." / 
 4. Ask _"Explain your previous answer without using tools."_, then _"List the repository files without making changes or running tests."_ Neither response should have a recap.
 5. Revert the README change when you're done.
 
+### Layout examples
+
+This screenshot is from a real `bun dev` run of opencode in the terminal, using the failing demo test from [Failing test names (#35)](#failing-test-names-35). The task ran tests but changed no files, so **Files changed** shows the empty message, and the failed run lists the two failing tests underneath it.
+
+![Learning Recap for a failed bun test run, listing the failing tests "math > adds" and "top level fails"](docs/images/learning-recap-failing-names.png)
+
 ### Supported test runners (#36)
 
 The Tests section recognizes test runs in many languages, not just JavaScript:
