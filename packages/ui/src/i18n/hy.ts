@@ -171,6 +171,8 @@ export const dict: Record<string, string> = {
   "ui.permission.deny": "Մերժել",
   "ui.permission.allowAlways": "Թույլատրել միշտ",
   "ui.permission.allowOnce": "Թույլատրել մեկ անգամ",
+  "ui.permission.explain.what": "Ինչ է սա անում՝",
+  "ui.permission.explain.why": "Ինչու՝",
   "ui.message.expand": "Ընդարձակել հաղորդագրություն",
   "ui.message.collapse": "Ծալել հաղորդագրություն",
   "ui.message.copy": "Պատճեն",

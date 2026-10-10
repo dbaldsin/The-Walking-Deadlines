@@ -171,6 +171,8 @@ export const dict = {
   "ui.permission.deny": "Үгүйсгэх",
   "ui.permission.allowAlways": "Үргэлж зөвшөөрөх",
   "ui.permission.allowOnce": "Нэг удаа зөвшөөрнө үү",
+  "ui.permission.explain.what": "Энэ юу хийдэг вэ:",
+  "ui.permission.explain.why": "Яагаад:",
   "ui.message.expand": "Зурвасыг дэлгэх",
   "ui.message.collapse": "Зурвасыг буулгах",
   "ui.message.copy": "Хуулбарлах",

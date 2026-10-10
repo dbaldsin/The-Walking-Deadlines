@@ -177,6 +177,8 @@ export const dict = {
   "ui.permission.deny": "拒否",
   "ui.permission.allowAlways": "常に許可",
   "ui.permission.allowOnce": "今回のみ許可",
+  "ui.permission.explain.what": "この操作の内容：",
+  "ui.permission.explain.why": "理由：",
 
   "ui.message.expand": "メッセージを展開",
   "ui.message.collapse": "メッセージを折りたたむ",

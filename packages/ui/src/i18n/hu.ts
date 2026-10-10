@@ -173,6 +173,8 @@ export const dict: Record<string, string> = {
   "ui.permission.deny": "Megtagadás",
   "ui.permission.allowAlways": "Mindig engedje meg",
   "ui.permission.allowOnce": "Engedje meg egyszer",
+  "ui.permission.explain.what": "Mit csinál ez:",
+  "ui.permission.explain.why": "Miért:",
   "ui.message.expand": "Üzenet kibontása",
   "ui.message.collapse": "Üzenet összecsukása",
   "ui.message.copy": "Másolás",

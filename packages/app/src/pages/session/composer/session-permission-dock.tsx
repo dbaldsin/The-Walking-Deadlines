@@ -19,6 +19,16 @@ export function SessionPermissionDock(props: {
     return value
   }
 
+  // Plain-language summary computed server-side by the tool (see opencode `Translator`).
+  const explanation = () => {
+    const value = props.request.metadata?.explanation
+    if (!value || typeof value !== "object") return undefined
+    const what = "what" in value && typeof value.what === "string" ? value.what : undefined
+    const why = "why" in value && typeof value.why === "string" ? value.why : undefined
+    if (!what && !why) return undefined
+    return { what, why }
+  }
+
   return (
     <DockPrompt
       kind="permission"
@@ -57,6 +67,26 @@ export function SessionPermissionDock(props: {
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-hint">{toolDescription()}</div>
         </div>
+      </Show>
+
+      <Show when={explanation()}>
+        {(item) => (
+          <div data-slot="permission-row">
+            <span data-slot="permission-spacer" aria-hidden="true" />
+            <div data-slot="permission-hint" data-variant="explanation">
+              <Show when={item().what}>
+                <div>
+                  <strong>{language.t("ui.permission.explain.what")}</strong> {item().what}
+                </div>
+              </Show>
+              <Show when={item().why}>
+                <div>
+                  <strong>{language.t("ui.permission.explain.why")}</strong> {item().why}
+                </div>
+              </Show>
+            </div>
+          </div>
+        )}
       </Show>
 
       <Show when={props.request.patterns.length > 0}>

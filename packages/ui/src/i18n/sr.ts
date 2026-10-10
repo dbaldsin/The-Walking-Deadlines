@@ -176,6 +176,8 @@ export const dict = {
   "ui.permission.deny": "Дени",
   "ui.permission.allowAlways": "Дозволи увек",
   "ui.permission.allowOnce": "Дозволи једном",
+  "ui.permission.explain.what": "Шта ово ради:",
+  "ui.permission.explain.why": "Зашто:",
   "ui.message.expand": "Проширите поруку",
   "ui.message.collapse": "Скупи поруку",
   "ui.message.copy": "Копирај",

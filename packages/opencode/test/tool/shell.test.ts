@@ -241,6 +241,29 @@ describe("tool.shell permissions", () => {
     }),
   )
 
+  each("explains the command in plain language", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          yield* run(
+            {
+              command: "echo hello",
+              reason: "Check that the shell works",
+            },
+            capture(requests),
+          )
+          expect(requests[0].metadata.explanation).toEqual({
+            what: "Prints text",
+            why: "Check that the shell works",
+          })
+        }),
+      )
+    }),
+  )
+
   each("asks for bash permission with multiple commands", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped()
