@@ -9,6 +9,7 @@ This guide explains the features this team added to opencode and how to try each
 - [Changed Files in the Learning Recap — Saif (#8)](#changed-files-in-the-learning-recap--saif-8)
 - [Project learning companion — Dion (#29)](#project-learning-companion--dion-29)
 - [Explain errors before fixing them — Rashid (#21)](#explain-errors-before-fixing-them--rashid-21)
+- [Plain-language permission explanations — Jassim (#19, #20, PR #27)](#plain-language-permission-explanations--jassim-27)
 
 ## Learning Recap — Sangyoon (#9, #11, #35, #36)
 
@@ -362,3 +363,100 @@ bun test test/provider/transform.test.ts -t "adds error explanation guidance to 
 ### Why these tests are enough:
 
 The automated test checks the final assembled system prompt, which is the exact place where this feature is added. It verifies that the new error-explanation guidance is present while existing agent instructions are preserved. The provider recording fixtures also check that the updated prompt is correctly sent through supported provider request formats. Together, these tests cover both the prompt-building logic and its integration with provider requests.
+
+
+## Plain-language permission explanations — Jassim (#27)
+
+When opencode asks permission to run a shell command, edit a file, or create a file, the prompt now explains the action in plain language, so a beginner can decide without reading the raw command or diff.
+
+| Issue | PR |
+| #19,#20 | #27 | 
+| #27 Explain tool permissions in plain language | [#27](https://github.com/dbaldsin/The-Walking-Deadlines/pull/27) | A plain-language **What** and **Why** in every shell, edit, and write permission prompt, in the terminal and the web app |
+
+### What the prompt shows
+
+- **What:** what the action will actually do, for example "Permanently deletes build and everything inside it". opencode works this out from the command or diff itself, not from the model, so the model can't misdescribe a dangerous action.
+- **Why:** one short sentence from the model explaining why it needs to do this. The model supplies it through a new optional `reason` parameter on the shell, edit, and write tools. If the model leaves it out, only **What** is shown.
+
+The choices are **Allow once / Allow always / Reject**
+
+```text
+What: Permanently deletes build and everything inside it, then creates the folder build
+Why:  Start from a clean build folder before compiling
+```
+
+In the web and desktop app, the same text appears in the permission panel as **What this does:** and **Why:**, translated into all 61 supported languages.
+
+### What it explains
+
+| Kind of action | Example | What |
+| --- | --- | --- |
+| Git | `git status` | Shows which files have changed |
+| Risky git | `git push --force` | Force-uploads your commits to the remote repository, overwriting its history (others may lose work) |
+| Deleting | `rm -rf build` | Permanently deletes build and everything inside it |
+| Packages | `bun add zod` | Installs the package zod |
+| Writing via `>` / `>>` / `tee` | `ls > files.txt` | Lists the files in the current folder and writes the output to files.txt (creating or overwriting it) |
+| Administrator rights | `sudo rm a.txt` | Permanently deletes a.txt (with administrator rights) |
+| Edit tool | change one line in `notes.txt` | Edits notes.txt (adds 1 line, removes 1 line) |
+| Write tool | create `hello.txt` | Creates the new file hello.txt (1 line) |
+| Anything else | `make` | Runs the program `make` |
+
+- **Chained commands** (`&&`, `||`, `;`, `|`) are described step by step, for example "Stages all changed files for the next commit, then saves a snapshot (commit) …". At most three steps are shown; the rest are summarized as "and N more steps".
+- **Redirections that don't change files**, such as `2>&1` or `> /dev/null`, are left out of the description.
+- **Commands too complex to summarize safely**, such as command substitution (`$(…)`, backticks), heredocs (`<<`), subshells, or an unmatched quote, show a warning instead: "Runs a shell command that is too complex to summarize safely. Review the full command before allowing it". These can hide side effects, so opencode doesn't guess.
+
+### How to try it
+
+opencode allows every tool without asking by default, so first turn the prompts on.
+
+1. Create a test folder that asks before every shell command and file edit:
+
+   ```sh
+   mkdir -p /tmp/perm-test && cd /tmp/perm-test && git init
+   printf '{\n  "$schema": "https://opencode.ai/config.json",\n  "permission": { "bash": "ask", "edit": "ask" }\n}\n' > opencode.json
+   ```
+
+   (`/tmp` is cleared when the dev container restarts. To get prompts in every folder, put the same `permission` line in `~/.config/opencode/opencode.jsonc` instead.)
+2. From the repository root, start opencode in that folder: `bun dev /tmp/perm-test`.
+3. Ask: _"Run `git status`."_ The prompt shows **What: Shows which files have changed** plus the model's **Why**. Choose **Allow once**.
+4. Ask: _"Run `rm -rf build && mkdir build`."_ **What** describes both steps and warns that the delete is permanent. Choose **Reject**; nothing runs.
+5. Ask: _"Run `ls > files.txt`."_ **What** says the output is written to `files.txt`, creating or overwriting it.
+6. Ask: _"Run `echo $(whoami)`."_ **What** shows the "too complex to summarize safely" warning.
+7. Ask: _"Create `notes.txt` with the lines `one` and `two`."_ **What: Creates the new file notes.txt (2 lines)**. Allow it, then ask _"Change `two` to `three` in `notes.txt`."_ **What: Edits notes.txt (adds 1 line, removes 1 line)**.
+8. Delete `/tmp/perm-test` when you're done.
+
+### Automated tests
+
+From `packages/opencode`:
+
+```sh
+bun test test/translator/index.test.ts
+bun test test/tool/shell.test.ts -t "explains the command in plain language"
+bun test test/tool/edit.test.ts -t "explains the edit in the permission request"
+bun test test/tool/write.test.ts -t "explains the write in the permission request"
+bun test test/tool/parameters.test.ts
+```
+
+From `packages/app`:
+
+```sh
+bun test src/i18n/parity.test.ts
+```
+
+| Test file | What it covers |
+| --- | --- |
+| `packages/opencode/test/translator/index.test.ts` | The explanation text itself (14 tests): quoted commit messages kept intact, package installs, recursive-delete and history-rewriting warnings, chained commands, redirections that do or don't write files (`>`, `>>`, `2>`, `&>`, `tee`, `/dev/null`), the safe fallback for substitutions, heredocs, subshells, and broken quoting, `sudo`, unknown programs, passing through the model's reason, empty commands, and edit/write line counts. |
+| `test/tool/shell.test.ts`, `edit.test.ts`, `write.test.ts` | **End to end through the real tools.** Each runs the actual tool and checks that the permission request it sends carries the expected `explanation` with both **What** and **Why**. |
+| `test/tool/parameters.test.ts` | Snapshot of each tool's parameters, confirming the new optional `reason` parameter appears as expected on shell, edit, and write. |
+| `packages/app/src/i18n/parity.test.ts` | The new **What this does:** / **Why:** labels exist in every one of the 61 languages. |
+
+### Why these tests are enough
+
+- **The explanation depends only on the text.** **What** is computed from the command or diff alone, so testing many real command examples directly checks exactly what the user will see, with no model or shell needed.
+- **Safety cases are tested as carefully as normal ones.** Commands that could hide side effects (substitution, heredocs, subshells, unmatched quotes, a redirection with no target) all have tests confirming they get the warning instead of a misleading summary. Redirections that write files were added after review and have their own tests.
+- **The wiring is tested through the real tools.** The shell, edit, and write tests run the actual tools and inspect the permission request they produce, so the path from tool call to prompt is covered, not just the helper.
+- **Translations can't silently go missing.** The parity test fails if any language lacks the new labels. It caught exactly that on the first CI run.
+- **Checked in the real app.** The walkthrough above was run with `bun dev` using the `/tmp/perm-test` config.
+
+
+
