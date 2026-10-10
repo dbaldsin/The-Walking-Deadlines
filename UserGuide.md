@@ -2,23 +2,27 @@
 
 This guide explains the features this team added to opencode and how to try each one yourself. Each section below is written by whoever implemented that feature — add your own section rather than editing someone else's.
 
-## Learning Recap (#5, #7–#11)
+## Learning Recap — Sangyoon (#9, #11, #35, #36)
 
-**What it does:** after opencode successfully finishes a task that changed files or ran tests, it appends one "Learning Recap" to the end of its final response, listing:
+After opencode finishes a task that changed files or ran tests, it adds a **Learning Recap** to the end of its final response. The recap shows what changed and how the tests went, so a student can review the task without scrolling back through the conversation.
 
-- **Files changed** — every file touched during the task, with its status (added/modified/deleted) and line counts.
-- **Tests** — every test command that ran (`bun test`, `npm test`, `pytest`, `go test`, and similar), whether it passed, failed, or didn't finish, plus a short summary line.
+| Issue | PR | What I added |
+| --- | --- | --- |
+| #9 Record test commands and results | [#24](https://github.com/dbaldsin/The-Walking-Deadlines/pull/24) | Recognizes test commands and records each run as passed, failed, or not-run, with a summary |
+| #11 Display learning recap in final response | [#28](https://github.com/dbaldsin/The-Walking-Deadlines/pull/28) | Builds the recap from the task's changes and test runs and appends it to the final response |
+| #36 Detect more test runners | [#37](https://github.com/dbaldsin/The-Walking-Deadlines/pull/37) | Recognizes test runners from other languages, wrapped commands, and build tools |
+| #35 Show failing test names | [#38](https://github.com/dbaldsin/The-Walking-Deadlines/pull/38) | Lists the names of the failing tests under a failed run |
 
-Each recap covers all provider turns in the task, including work before instructions sent while opencode is busy. An empty category shows "No files were changed during this task." or "No tests were run during this task." Plain replies, read-only tasks, and tasks that end in an error, denied permission, or cancellation receive no recap.
+The recap also uses Dion's schema (#7, see [below](#shared-learning-recap-schema--dion-7-pr-23)) and Saif's changed-files collector (#8, see [Changed Files in the Learning Recap](#changed-files-in-the-learning-recap-8)).
 
-### How to try it
+### What the recap shows
 
-1. Start this checkout with `bun dev` from `packages/opencode`.
-2. Ask: _"Append `<!-- learning recap demo -->` to `packages/opencode/README.md` and run `bun test test/session/learning-recap-render.test.ts` from `packages/opencode`."_ Resolve the README path from the repository root. Tests must run from the package directory; this repository disables tests from its root.
-3. Once it finishes, the final response ends with a `## Learning Recap` section showing the file you changed and the test run's pass/fail status.
-4. Ask _"Explain your previous answer without using tools."_ Then ask _"List the repository files without making changes or running tests."_ Neither response should have a recap.
+- **Files changed:** every file the task added, modified, or deleted, with line counts.
+- **Tests:** every test command that ran, whether it passed, failed, or didn't finish, a short summary, and, for failed runs, the names of the failing tests.
 
-### Example output
+If a category is empty, it says so ("No files were changed during this task." / "No tests were run during this task."). A recap covers the whole task, including work done before a message you sent while opencode was busy.
+
+**When there is no recap:** plain replies, read-only tasks, and tasks that end in an error, a denied permission, or a cancellation.
 
 ```
 ## Learning Recap
@@ -27,27 +31,20 @@ Each recap covers all provider turns in the task, including work before instruct
 - packages/opencode/README.md (modified, +1/-0)
 
 ### Tests
-- bun test test/session/learning-recap-render.test.ts: passed (10 pass, 0 fail)
+- bun test test/session/learning-recap-render.test.ts: passed (11 pass, 0 fail)
 ```
 
-### Automated tests
+### How to try it
 
-- `packages/opencode/test/session/learning-recap.test.ts` — the shared `LearningRecap.Info` schema: accepts complete, partial, and empty recaps; rejects invalid test-result data.
-- `packages/opencode/test/session/learning-recap-tests.test.ts` — detecting test commands (`bun test`, `npm test`, `pytest`, `go test`, compound commands like `cd x && bun test`) and turning a finished shell call into a passed/failed/not-run result with a summary.
-- `packages/opencode/test/session/learning-recap-files.test.ts` — collecting and formatting the files changed during a task, including one-sided edits to existing files (an edit with only additions or only deletions, which line counts alone can't tell apart from a new/deleted file).
-- `packages/opencode/test/session/learning-recap-render.test.ts` — building the full recap from a turn's tool-call parts and file diffs, and rendering it to the markdown shown above, including the "nothing to report" and "no tests ran" cases.
-- `packages/opencode/test/session/prompt.test.ts` — real edits and failing/passing test runs across provider turns and busy steering; one recap on the final response; repeated loops and later read-only tasks; no recaps after provider errors, permission denials, or cancellation.
-
-Run the recap checks from `packages/opencode`:
-
-```sh
-bun test test/session/learning-recap*.test.ts
-bun test test/session/prompt.test.ts -t "learning recap"
-```
+1. From `packages/opencode`, start this checkout with `bun dev`.
+2. Ask: _"Append `<!-- learning recap demo -->` to `packages/opencode/README.md`, then run `bun test test/session/learning-recap-render.test.ts` from `packages/opencode`."_ (Tests must run from the package directory; this repository disables tests from its root.)
+3. The final response ends with a **Learning Recap** listing the README change and the passing test run.
+4. Ask _"Explain your previous answer without using tools."_, then _"List the repository files without making changes or running tests."_ Neither response should have a recap.
+5. Revert the README change when you're done.
 
 ### Supported test runners (#36)
 
-The Tests section recognizes test runs across common languages, not just JavaScript:
+The Tests section recognizes test runs in many languages, not just JavaScript:
 
 | Ecosystem | Recognized commands |
 | --- | --- |
@@ -58,19 +55,28 @@ The Tests section recognizes test runs across common languages, not just JavaScr
 | Ruby / PHP | `rspec`, `rails test`, `phpunit`, `php artisan test` |
 | Other | `make test`, `make check` |
 
-They are also recognized when another task runs first (`mvn clean test`, `./gradlew clean test`, `gradle :app:test`) or when launched through a wrapper: `npx`, `bunx`, `yarn`, `pnpm exec`/`dlx`, `yarn dlx`, `uv run`, `poetry run`, `pipenv run`, `bundle exec`, or `timeout <seconds>`. For example, `uv run pytest -q` and `npx --yes jest` both count. Other tasks of the same tools are not test runs, so `cargo build`, `mvn clean package`, `gradle build -x test` or `--exclude-task test` (which skip the tests, even if `test` is also requested), `node script.js --test`, and `echo pytest` do not appear in the recap. For Maven/JUnit and dotnet, the summary uses the runner's totals line (for example `Tests run: 3, Failures: 1, Errors: 0, Skipped: 0`).
+**Also recognized:**
 
-**How to try it:** in any project that uses one of these runners, ask opencode to run its tests with a wrapper, e.g. *"Run `uv run pytest -q`"* or *"Run `./gradlew clean test`"*. The final response's recap lists the command under **Tests** with passed/failed status. Then ask *"Add a comment to one file and run `cargo build`"* (or another non-test task). The recap lists the edited file, and its Tests section says "No tests were run during this task."
+- **Other tasks first:** `mvn clean test`, `./gradlew clean test`, `gradle :app:test`
+- **Wrappers:** `npx`, `bunx`, `yarn`, `pnpm exec` / `dlx`, `yarn dlx`, `uv run`, `poetry run`, `pipenv run`, `bundle exec`, `timeout <seconds>`. For example, `uv run pytest -q` and `npx --yes jest`.
+- **After a directory change or environment variables:** `cd packages/app && bun test`, `CI=1 npm test`
 
-**Automated tests:** `packages/opencode/test/session/learning-recap-tests.test.ts` checks every runner and wrapper listed above and the non-test commands that must be ignored. It also checks that results from wrapped and build-tool runners keep passed/failed/not-run status and that Maven and dotnet totals are used as summaries. Detection is a pure function of the command text, and the recap's rendering and session wiring are already covered by `learning-recap-render.test.ts` and `prompt.test.ts`. So checking each command pattern directly, with positive and negative examples for each tool, covers this change completely without running the real toolchains.
+**Not counted as test runs:**
+
+- `cargo build`, `mvn clean package`, `node script.js --test`, `echo pytest`, `git commit -m "bun test"`
+- Gradle commands that skip tests with `-x test` or `--exclude-task test`, even if `test` is also requested (for example `gradle test -x test`)
+
+For Maven/JUnit and dotnet, the summary uses the runner's totals line, for example `Tests run: 3, Failures: 1, Errors: 0, Skipped: 0`.
+
+**How to try it:** in a project that uses one of these runners, ask opencode to run its tests through a wrapper, for example _"Run `uv run pytest -q`"_ or _"Run `./gradlew clean test`"_. The recap lists the command under **Tests** with its status. Then ask _"Add a comment to one file and run `cargo build`"_. The recap lists the edited file, and its Tests section says "No tests were run during this task."
 
 ### Failing test names (#35)
 
-When a test run fails, the recap lists which tests failed under that command, so you can see what broke without scrolling back through the shell output:
+When a test run fails, the recap lists the names of the tests that failed underneath it, so you can see what broke without searching the shell output:
 
 ```
 ### Tests
-- bun test: failed (1 pass, 2 fail)
+- bun test ./test/demo.test.ts: failed (1 pass, 2 fail)
   - math > adds
   - top level fails
 ```
@@ -86,11 +92,51 @@ Names are read from the failure lines each runner prints:
 | `go test` | `--- FAIL: TestAdds (0.00s)` | `TestAdds` |
 | `cargo test` | `test tests::adds ... FAILED` (or `tests::adds --- FAILED` with `-q`) | `tests::adds` |
 
-If a jest or vitest run prints only per-test marks (`✕ adds (5 ms)` / `× adds 3ms`), those are used instead. Each failing test is listed once, even if the runner prints it twice. At most five are shown; the rest are summarized as "…and N more". Passed and not-run results never list names. If no names can be found in the output, for example from `make test`, the entry shows just the summary line, as before.
+- If jest or vitest print only per-test marks (`✕ adds (5 ms)` / `× adds 3ms`), those are used instead.
+- Each failing test is listed once, even if the runner prints it twice.
+- At most five names are shown; the rest are summarized as "…and N more".
+- Passed and not-run results never list names.
+- If no names can be found (for example from `make test`), the entry shows only the summary line.
 
-**How to try it:** in this repository, add a test that fails, such as `test("adds", () => expect(1 + 1).toBe(3))` in a new `packages/opencode/test/demo.test.ts`. Then ask opencode to *"Run `bun test test/demo.test.ts` from `packages/opencode`"*. The recap's Tests section shows `failed` with `adds` nested underneath. Fix the test and run it again: the entry shows `passed` with no names. Delete the demo file when you're done.
+**How to try it:**
 
-**Automated tests:** the `failing test names` block in `packages/opencode/test/session/learning-recap-tests.test.ts` parses real bun and cargo output (captured from actual failing runs) and representative jest, vitest, pytest, and go output. It also covers jest's suite-level `●` errors that are not tests, the verbose-mark fallback, duplicate names, the five-name limit and its "…and N more" line, unchanged passed/not-run results, the summary-only fallback, and schema validity. `packages/opencode/test/session/learning-recap-render.test.ts` checks the end-to-end path from a failing bash call to the nested list in the final markdown. Together these cover every #35 acceptance criterion. Parsing is a pure function of the output text, so testing it on runner output is enough without installing each runner in CI.
+1. Create `packages/opencode/test/demo.test.ts`:
+   ```ts
+   import { describe, expect, test } from "bun:test"
+
+   describe("math", () => {
+     test("adds", () => expect(1 + 1).toBe(3))
+     test("ok", () => expect(1).toBe(1))
+   })
+   test("top level fails", () => expect(true).toBe(false))
+   ```
+2. In a new opencode session, ask: _"In packages/opencode, run `bun test ./test/demo.test.ts`. Don't create or change any files."_ Keep the `./`. Without it, Bun treats the path as a name filter and finds no tests.
+3. The recap shows `failed (1 pass, 2 fail)` with `math > adds` and `top level fails` listed underneath.
+4. Delete `demo.test.ts` when you're done.
+
+### Automated tests
+
+All of these run from `packages/opencode`:
+
+```sh
+bun test test/session/learning-recap*.test.ts
+bun test test/session/prompt.test.ts -t "learning recap"
+```
+
+| Test file | What it covers |
+| --- | --- |
+| `test/session/learning-recap-tests.test.ts` | **#9, #35, #36.** Test-command detection for every runner, wrapper, and build-tool form above, plus commands that must not count (including the Gradle exclusions). Passed/failed/not-run status, summaries (including Maven/dotnet totals), truncation, and the "no tests" message. Failing-name parsing using real bun and cargo output plus jest, vitest, pytest, and go output, with de-duplication, the five-name limit, the fallbacks, and schema validity. |
+| `test/session/learning-recap-render.test.ts` | **#11, #35.** Building the recap from a task's tool calls and file changes, rendering the markdown (including the empty cases and nested failing names), and returning nothing when the task did nothing. |
+| `test/session/prompt.test.ts` (`learning recap`) | **#11, end to end.** Real edits and passing/failing test runs across several provider turns and busy steering. Exactly one recap on the final response; none after provider errors, permission denials, or cancellation, or on later read-only tasks. |
+| `test/session/learning-recap.test.ts` | The shared schema (Dion, #7). The optional failing-names field added for #35 is checked against it in `learning-recap-tests.test.ts`. |
+
+### Why these tests are enough
+
+- **Every acceptance criterion has a test.** For #9, #11, #35, and #36, each criterion maps to a named test case. [#37](https://github.com/dbaldsin/The-Walking-Deadlines/pull/37) and [#38](https://github.com/dbaldsin/The-Walking-Deadlines/pull/38) list the mapping as a table; [#24](https://github.com/dbaldsin/The-Walking-Deadlines/pull/24) and [#28](https://github.com/dbaldsin/The-Walking-Deadlines/pull/28) describe what each test covers.
+- **Detection and parsing only look at text.** Whether a command is a test run depends only on the command, and failing names depend only on the output. So testing many real command and output examples directly is reliable, and no real toolchain needs to be installed in CI.
+- **The full path is tested with real tasks.** `prompt.test.ts` runs whole tasks with real file edits and test commands, so the wiring from tool calls to the final response is covered, not just the helpers.
+- **Negative cases are tested as carefully as positive ones.** Commands that only mention tests, skipped Gradle tests, and tasks that shouldn't get a recap all have their own tests. The Gradle case came from teammate review on #37 and is now a regression test.
+- **Checked in the real app.** The walkthroughs above were run in `bun dev` and match the automated expectations. PR #38 has a screenshot.
 
 ## Shared learning recap schema — Dion (#7, PR #23)
 
