@@ -4,9 +4,6 @@ services:
     ports:
       # Only reachable from the VM itself; Nginx proxies public traffic here.
       - "127.0.0.1:4096:4096"
-    environment:
-      # Optional basic-auth password for the web UI; unset leaves it open.
-      - OPENCODE_SERVER_PASSWORD
     volumes:
       # Keep sessions, auth and config across container rebuilds.
       - opencode-data:/root/.local/share/opencode
