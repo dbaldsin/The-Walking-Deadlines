@@ -30,6 +30,10 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends git ripgrep ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
+# `opencode web` tries to open a browser on startup and crashes when xdg-open
+# is missing, so stub it out on this headless server.
+RUN ln -s /bin/true /usr/local/bin/xdg-open
+
 COPY --from=build /out/opencode /usr/local/bin/opencode
 RUN opencode --version
 
