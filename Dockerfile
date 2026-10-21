@@ -13,14 +13,14 @@ RUN apt-get update \
 WORKDIR /src
 COPY . .
 
-# Skip git hooks, and pin the channel/version so the build script neither shells
-# out to git nor queries npm for the latest release.
+# Skip git hooks and use the checked-in package version, so the build script
+# neither shells out to git nor queries npm for the latest release.
 ENV HUSKY=0 \
-    OPENCODE_CHANNEL=deploy \
-    OPENCODE_VERSION=0.0.0-deploy
+    OPENCODE_CHANNEL=deploy
 
 RUN bun install --frozen-lockfile
-RUN bun run --cwd packages/opencode script/build.ts --single \
+RUN OPENCODE_VERSION="$(bun -p 'require("./packages/opencode/package.json").version')" \
+    bun run --cwd packages/opencode script/build.ts --single \
   && mkdir -p /out \
   && cp packages/opencode/dist/opencode-linux-*/bin/opencode /out/opencode
 
