@@ -20,7 +20,7 @@ ENV HUSKY=0 \
 
 RUN bun install --frozen-lockfile
 RUN OPENCODE_VERSION="$(bun -p 'require("./packages/opencode/package.json").version')" \
-    bun run --cwd packages/opencode script/build.ts --single \
+    bun run --cwd packages/opencode script/build.ts --single --skip-install \
   && mkdir -p /out \
   && cp packages/opencode/dist/opencode-linux-*/bin/opencode /out/opencode
 
