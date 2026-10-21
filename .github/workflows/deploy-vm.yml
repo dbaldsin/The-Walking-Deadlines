@@ -1,0 +1,43 @@
+name: deploy-vm
+
+# Rebuilds and restarts the opencode container on the CMU VM whenever main
+# changes. Runs on a self-hosted runner installed on the VM itself, since the
+# VM is not reachable from GitHub-hosted runners.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Build and restart container
+        run: docker compose -p walking-deadlines up -d --build --remove-orphans
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:4096/; then
+              echo "opencode is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -p walking-deadlines logs --tail 100
+          exit 1
+
+      - name: Prune old images
+        if: always()
+        run: docker image prune -f
