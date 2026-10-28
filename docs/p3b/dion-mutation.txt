@@ -1,0 +1,49 @@
+Temporary regression: reverse input so first duplicate wins. Production file restored afterward.
+Expected nonzero exit; actual exit: 1
+bun test v1.3.11 (af24e281)
+
+test/session/learning-recap-files.property.test.ts:
+2471 | 	return error;
+2472 | }
+2473 | /** @internal */
+2474 | function throwIfFailed(out) {
+2475 | 	if (!out.failed) return;
+2476 | 	throw buildError(defaultReportMessage(out), out);
+                                                       ^
+error: Property failed after 1 tests
+{ seed: 1463096947, path: "0:1:1:2:3:3:4:5:5:6:5", endOnFailure: true }
+Counterexample: [[{"file":"src/a.ts","additions":0,"deletions":0,"status":undefined},{"file":"src/a.ts","additions":0,"deletions":0,"status":"added"}]]
+Shrunk 10 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at throwIfFailed (/Users/dionbaldsing/Documents/CMU/Fall 26'/17-313_Software_Eng/p3b-dion/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:49)
+      at assert (/Users/dionbaldsing/Documents/CMU/Fall 26'/17-313_Software_Eng/p3b-dion/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2662:7)
+      at <anonymous> (/Users/dionbaldsing/Documents/CMU/Fall 26'/17-313_Software_Eng/p3b-dion/packages/opencode/test/session/learning-recap-files.property.test.ts:21:8)
+(fail) changed-file recap properties > keeps exactly one entry per nonempty path using its last input value [31.97ms]
+2471 | 	return error;
+2472 | }
+2473 | /** @internal */
+2474 | function throwIfFailed(out) {
+2475 | 	if (!out.failed) return;
+2476 | 	throw buildError(defaultReportMessage(out), out);
+                                                       ^
+error: Property failed after 1 tests
+{ seed: 317092357, path: "0:0:0:0:0:0:0:0", endOnFailure: true }
+Counterexample: ["src/a.ts",{"file":undefined,"additions":0,"deletions":0,"status":undefined},{"additions":0,"deletions":0}]
+Shrunk 7 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at throwIfFailed (/Users/dionbaldsing/Documents/CMU/Fall 26'/17-313_Software_Eng/p3b-dion/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:49)
+      at assert (/Users/dionbaldsing/Documents/CMU/Fall 26'/17-313_Software_Eng/p3b-dion/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2662:7)
+      at <anonymous> (/Users/dionbaldsing/Documents/CMU/Fall 26'/17-313_Software_Eng/p3b-dion/packages/opencode/test/session/learning-recap-files.property.test.ts:41:8)
+(fail) changed-file recap properties > a later duplicate replaces earlier counts and status [3.99ms]
+(pass) changed-file recap properties > preserves every explicit status and leaves one-sided unknown edits unknown [9.34ms]
+(pass) changed-file recap properties > formats selected paths, statuses and counts without changing the input [9.85ms]
+(pass) changed-file recap properties > explains empty output including lists containing only missing paths [3.26ms]
+(fail) (unnamed) [9879.94ms]
+  ^ a beforeEach/afterEach hook timed out for this test.
+
+ 3 pass
+ 3 fail
+ 1665 expect() calls
+Ran 6 tests across 1 file. [11.12s]

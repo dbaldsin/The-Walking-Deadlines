@@ -1,0 +1,77 @@
+bun test v1.3.11 (af24e281)
+
+test/session/learning-recap-tests.test.ts:
+(pass) isTestCommand > recognizes common test runners [1.28ms]
+(pass) isTestCommand > finds a test run inside a compound command [0.11ms]
+(pass) isTestCommand > ignores commands that only mention tests [0.06ms]
+(pass) isTestCommand > recognizes runners for other languages and frameworks
+(pass) isTestCommand > recognizes build tools that run other tasks before the tests [0.14ms]
+(pass) isTestCommand > ignores Gradle commands that exclude the test task [0.18ms]
+(pass) isTestCommand > still recognizes Gradle test runs when a different task is excluded [0.02ms]
+(pass) isTestCommand > recognizes runners launched through a wrapper [0.12ms]
+(pass) isTestCommand > ignores other tasks of the same tools [0.07ms]
+(pass) fromShell > records a successful test run [0.54ms]
+(pass) fromShell > records a failed test run with the runner's totals line [0.22ms]
+(pass) fromShell > reads label-first totals from Maven and dotnet [0.06ms]
+(pass) fromShell > records results from wrapped and build-tool runners [0.08ms]
+(pass) fromShell > falls back to the last output line when there are no totals [0.06ms]
+(pass) fromShell > marks a test run that never finished as not-run [0.03ms]
+(pass) fromShell > truncates long summaries
+(pass) fromShell > returns nothing for non-test commands [0.49ms]
+(pass) collect and format > collects only test runs, in order, and they satisfy the recap schema [3.57ms]
+(pass) collect and format > lists each command with its status [0.16ms]
+(pass) collect and format > shows a clear message when no tests were run [0.03ms]
+(pass) failing test names > lists failing tests from bun output [0.06ms]
+(pass) failing test names > lists failing tests from jest output without duplicating verbose marks [0.83ms]
+(pass) failing test names > skips jest suite-level errors that are not tests [0.06ms]
+(pass) failing test names > lists failing tests from vitest output [0.06ms]
+(pass) failing test names > falls back to verbose failure marks when there is no failure summary [0.04ms]
+(pass) failing test names > lists failing tests from pytest, go, and cargo output [0.13ms]
+(pass) failing test names > lists each failing test once even when the runner repeats it [0.02ms]
+(pass) failing test names > keeps passed and not-run results unchanged [0.10ms]
+(pass) failing test names > falls back to the summary line when no failing names can be parsed [0.05ms]
+(pass) failing test names > formats failing names as a nested list, at most five, and they satisfy the recap schema [0.45ms]
+(pass) failing test names > does not add a remainder line for five or fewer failures [0.03ms]
+
+test/session/learning-recap-render.test.ts:
+(pass) LearningRecapRender.fromParts > collects completed bash calls as tests [2.01ms]
+(pass) LearningRecapRender.fromParts > ignores non-bash tools and calls that are not completed [0.20ms]
+(pass) LearningRecapRender.fromParts > reports nothing when the turn ran only non-test commands and changed no files [0.39ms]
+(pass) LearningRecapRender.fromParts > still shows the no-tests message when files changed but no tests ran [0.06ms]
+(pass) LearningRecapRender.fromParts > treats a missing exit code as not-run [0.24ms]
+(pass) LearningRecapRender.fromParts > collects the task's changed files alongside the tests [2.14ms]
+(pass) LearningRecapRender.render > renders a heading and the formatted test lines [0.52ms]
+(pass) LearningRecapRender.render > shows the clear no-tests message when the task ran no tests [0.12ms]
+(pass) LearningRecapRender.render > renders files changed above tests, each with its own heading [0.19ms]
+(pass) LearningRecapRender.render > lists failing test names from a bash call under that command [0.15ms]
+(pass) LearningRecapRender.render > renders nothing when the recap has no sections to show
+
+test/session/learning-recap-files.property.test.ts:
+(pass) changed-file recap properties > keeps exactly one entry per nonempty path using its last input value [18.83ms]
+(pass) changed-file recap properties > a later duplicate replaces earlier counts and status [8.56ms]
+(pass) changed-file recap properties > preserves every explicit status and leaves one-sided unknown edits unknown [3.66ms]
+(pass) changed-file recap properties > formats selected paths, statuses and counts without changing the input [24.52ms]
+(pass) changed-file recap properties > explains empty output including lists containing only missing paths [8.82ms]
+
+test/session/learning-recap-files.test.ts:
+(pass) collect > keeps the status from the task diff [0.18ms]
+(pass) collect > keeps one-sided edits to existing files as modified [0.13ms]
+(pass) collect > does not claim added or deleted from line counts when the status is missing [0.05ms]
+(pass) collect > keeps the latest diff when the same file appears more than once
+(pass) collect > drops entries with no file path
+(pass) collect > returns an empty result for a task with no file changes [0.10ms]
+(pass) collect > collected files satisfy the recap schema [0.56ms]
+(pass) format > lists each file with its status and counts [0.07ms]
+(pass) format > leaves out the status when the task diff did not provide one [0.04ms]
+(pass) format > shows a clear message when nothing changed [0.06ms]
+
+test/session/learning-recap.test.ts:
+(pass) LearningRecap.Info > accepts complete recap information [2.00ms]
+(pass) LearningRecap.Info > accepts an empty recap when information is unavailable [0.19ms]
+(pass) LearningRecap.Info > accepts partial recap information [0.17ms]
+(pass) LearningRecap.Info > rejects invalid test result data [2.85ms]
+
+ 61 pass
+ 0 fail
+ 2147 expect() calls
+Ran 61 tests across 5 files. [19.54s]
