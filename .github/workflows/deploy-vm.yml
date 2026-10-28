@@ -1,13 +1,10 @@
 name: deploy-vm
 
-# Rebuilds and restarts the opencode container on the CMU VM whenever main
-# changes. Runs on a self-hosted runner installed on the VM itself, since the
-# VM is not reachable from GitHub-hosted runners.
+# Called by test.yml only after validation of the same main commit passes.
+# The self-hosted runner is on the CMU VM, unreachable from hosted runners.
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -18,10 +15,14 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    timeout-minutes: 30
     runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
 
       - name: Build and restart container
         run: docker compose -p walking-deadlines up -d --build --remove-orphans
