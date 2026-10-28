@@ -1,0 +1,13 @@
+bun test v1.3.11 (af24e281)
+
+test/session/learning-recap-files.property.test.ts:
+(pass) changed-file recap properties > keeps exactly one entry per nonempty path using its last input value [7.40ms]
+(pass) changed-file recap properties > a later duplicate replaces earlier counts and status [1.15ms]
+(pass) changed-file recap properties > preserves every explicit status and leaves one-sided unknown edits unknown [1.41ms]
+(pass) changed-file recap properties > formats selected paths, statuses and counts without changing the input [2.33ms]
+(pass) changed-file recap properties > explains empty output including lists containing only missing paths [1.35ms]
+
+ 5 pass
+ 0 fail
+ 2039 expect() calls
+Ran 5 tests across 1 file. [2.68s]
