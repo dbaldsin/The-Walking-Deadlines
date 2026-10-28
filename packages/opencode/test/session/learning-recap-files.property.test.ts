@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import fc from "fast-check"
+import type { FileDiff } from "@opencode-ai/schema/file-diff"
 import { collect, format } from "@/session/learning-recap-files"
 
 const path = fc.constantFrom("src/a.ts", "src/b.ts", "docs/with space.md", "src/日本語.ts")
@@ -27,8 +28,8 @@ describe("changed-file recap properties", () => {
           .filter((entry) => entry.file)
           .forEach((entry) => {
             // The oracle searches the original input; it does not rebuild collect's Map.
-            expect(input.findLast((item) => item.file === entry.file)).toEqual(
-              output.find((item) => item.file === entry.file),
+            expect<FileDiff.Info | undefined>(output.find((item) => item.file === entry.file)).toEqual(
+              input.findLast((item) => item.file === entry.file),
             )
           })
         expect(output.every((entry) => Boolean(entry.file))).toBe(true)

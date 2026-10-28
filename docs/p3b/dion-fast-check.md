@@ -17,7 +17,7 @@ The existing `.github/workflows/test.yml` runs `bun turbo test --concurrency=4` 
 Run from `packages/opencode`:
 
 ```sh
-bun test test/session/learning-recap-files.property.test.ts
+bun test --timeout 30000 test/session/learning-recap-files.property.test.ts
 bun test --timeout 30000 test/session/learning-recap
 bun typecheck
 ```
@@ -37,4 +37,4 @@ For the deliberate regression, the input to collect's Map was temporarily revers
 
 No production defect or false-positive report was found by these properties. The deliberate first-duplicate-wins bug was a true positive. This does not establish an absence of false negatives: bounded generated inputs cannot prove correctness, and these properties do not test providers, the deployed UI, arbitrary diff sizes, or the rest of the recap pipeline.
 
-The implementation follows the design's scope, 100-case limit, 50-entry lists, five-second property timeout, direct dev dependency, existing unit-job integration, and deliberate regression validation. It additionally checks input immutability and paths containing spaces/Unicode. The first local broad recap run hit an existing integration hook's default timeout; rerunning with the package's configured 30-second suite timeout addresses that without relaxing the five-second property timeout. No production fix, ignored finding, narrowed target, or workflow change was needed.
+The implementation follows the design's scope, 100-case limit, 50-entry lists, five-second property timeout, direct dev dependency, existing unit-job integration, and deliberate regression validation. It additionally checks input immutability and paths containing spaces/Unicode. Local runs without the package's normal timeout hit an existing preload cleanup hook's default timeout; use the configured 30-second suite timeout for focused runs too. The five-second property timeout remains unchanged. No production fix, ignored finding, narrowed target, or workflow change was needed.
