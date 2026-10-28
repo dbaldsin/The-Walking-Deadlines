@@ -33,6 +33,8 @@ test("redirects a draft to the legacy new-session route", async ({ page }) => {
     { directory, draftID, server },
   )
 
+  // This historical layout is only available before its September 14 retirement.
+  await page.clock.setFixedTime(new Date("2026-09-12T12:00:00Z"))
   await page.goto(`/new-session?draftId=${draftID}`)
 
   await expect(page).toHaveURL(`/${base64Encode(directory)}/session`)

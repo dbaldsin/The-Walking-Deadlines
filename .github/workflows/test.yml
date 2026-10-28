@@ -6,9 +6,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep every run on dev so cancelled checks do not pollute the default branch
-  # commit history. PRs and other branches still share a group and cancel stale runs.
-  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  # Keep main runs intact while they validate and deploy. Cancel stale PR runs.
+  group: ${{ case(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
   cancel-in-progress: true
 
 permissions:
@@ -19,6 +18,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  typecheck:
+    uses: ./.github/workflows/typecheck.yml
+
   unit:
     name: unit
     runs-on: ubuntu-latest
@@ -139,3 +141,11 @@ jobs:
           path: |
             packages/app/e2e/test-results
             packages/app/e2e/playwright-report
+
+  deploy:
+    # Add each new blocking tool job to needs when its owner integrates it.
+    needs: [unit, e2e, typecheck]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy-vm.yml
