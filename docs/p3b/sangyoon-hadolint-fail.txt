@@ -1,0 +1,21 @@
+# dockerfile-lint on throwaway PR #46 (closed, not merged), which removed -y from the
+# runtime stage's apt-get install. Expected: DL3014 warning, job fails.
+# https://github.com/dbaldsin/The-Walking-Deadlines/actions/runs/41093948527/job/124194717740
+
+2026-10-30T16:53:39.6027925Z ##[group]Run hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387
+2026-10-30T16:53:39.6028138Z with:
+2026-10-30T16:53:39.6028249Z   dockerfile: Dockerfile
+2026-10-30T16:53:39.6028369Z   config: .hadolint.yaml
+2026-10-30T16:53:39.6028495Z   failure-threshold: warning
+2026-10-30T16:53:39.6028618Z   no-color: true
+2026-10-30T16:53:39.6028737Z   recursive: false
+2026-10-30T16:53:39.6028856Z   output-file: /dev/stdout
+2026-10-30T16:53:39.6028975Z   no-fail: false
+2026-10-30T16:53:39.6029076Z   verbose: false
+2026-10-30T16:53:39.6029177Z   format: tty
+2026-10-30T16:53:39.6029277Z env:
+2026-10-30T16:53:39.6029390Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-10-30T16:53:39.6029537Z ##[endgroup]
+2026-10-30T16:53:40.7087240Z ##[warning]Dockerfile:37 DL3014 warning: Use the `-y` switch to avoid manual input `apt-get -y install <package>`
+2026-10-30T16:53:40.7091688Z Hadolint output saved to: /dev/stdout
+2026-10-30T16:53:40.7872635Z Post job cleanup.
