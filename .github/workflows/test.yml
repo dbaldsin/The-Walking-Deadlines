@@ -142,9 +142,37 @@ jobs:
             packages/app/e2e/test-results
             packages/app/e2e/playwright-report
 
+  dockerfile-lint:
+    name: dockerfile-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Require deployment Dockerfile
+        run: |
+          if [ ! -f Dockerfile ]; then
+            echo "::error file=Dockerfile::Root Dockerfile is missing; the VM deployment builds from it."
+            exit 1
+          fi
+
+      - name: Lint deployment Dockerfile
+        # The action image pins hadolint v2.15.1 by digest. Its default
+        # HADOLINT_FAILURE_THRESHOLD env (info) overrides the config file, so
+        # the threshold is repeated here to match .hadolint.yaml.
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: warning
+          no-color: true
+
   deploy:
     # Add each new blocking tool job to needs when its owner integrates it.
-    needs: [unit, e2e, typecheck]
+    needs: [unit, e2e, typecheck, dockerfile-lint]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
