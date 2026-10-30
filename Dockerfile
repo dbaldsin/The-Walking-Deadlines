@@ -35,7 +35,7 @@ FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde
 # Review when a base image is bumped, and no later than 2027-01-31.
 # hadolint ignore=DL3008
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ripgrep ca-certificates \
+  && apt-get install --no-install-recommends git ripgrep ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 # `opencode web` tries to open a browser on startup and crashes when xdg-open
