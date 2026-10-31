@@ -1,0 +1,134 @@
+# Check run: intentional problem (known-vulnerable package added)
+# Produced on 2026-10-29 with OSV-Scanner v2.7.0 (release binary, SHA-256
+# 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b verified).
+# Offline mode: api.osv.dev was not reachable from the machine used, so the
+# database was built from the GitHub Advisory Database (github/advisory-database
+# @ f9caf57, 8,034 reviewed npm advisories) in OSV format. CI queries the live
+# OSV database, which also includes non-GitHub sources, so CI counts can be
+# slightly higher.
+# The workflow's run: steps (.github/workflows/osv-scanner.yml) were executed
+# in order from the YAML. Only the install step used the already-verified local
+# binary, and the reporter step used a re-implementation of osv-reporter's
+# gate (DiffVulnerabilityResultsByOccurrences): fail if any advisory ID occurs
+# more times after the change than before.
+# Event: pull_request on a throwaway commit that adds node-serialize@0.0.4
+# (GHSA-q4v7-4rhw-9hqm / CVE-2017-5941, code execution, no fixed version) to
+# packages/opencode. Expected: fail. The throwaway commit is not part of this PR.
+#
+# Throwaway change:
+#   diff --git a/bun.lock b/bun.lock
+#   index df79eb5..d4c2459 100644
+#   --- a/bun.lock
+#   +++ b/bun.lock
+#   @@ -564,6 +564,7 @@
+#            "opencode": "./bin/opencode",
+#          },
+#          "dependencies": {
+#   +        "node-serialize": "0.0.4",
+#            "@actions/core": "1.11.1",
+#            "@actions/github": "6.0.1",
+#            "@agentclientprotocol/sdk": "0.21.0",
+#   @@ -1153,6 +1154,8 @@
+#        "zod": "4.1.8",
+#      },
+#      "packages": {
+#   +    "node-serialize": ["node-serialize@0.0.4", "", {}, "sha512-Q7krX4keanOtqYrNWGlTWk0jSYPewtMpzs5AoV0NieqTtQkLRGq5e0R+iuTA3npbpk7B1zJy6dZ7o9wmmuEYmA=="],
+#   +
+#        "7zip-bin": ["7zip-bin@5.2.0", "", {}, "sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A=="],
+#
+#        "@actions/artifact": ["@actions/artifact@5.0.1", "", { "dependencies": { "@actions/core": "^2.0.0", "@actions/github": "^6.0.1", "@actions/http-client": "^3.0.0", "@azure/storage-blob": "^12.29.1", "@octokit/core": "^5.2.1", "@octokit/plugin-request-log": "^1.0.4", "@octokit/plugin-retry": "^3.0.9", "@octokit/request": "^8.4.1", "@octokit/request-error": "^5.1.1", "@protobuf-ts/plugin": "^2.2.3-alpha.1", "archiver": "^7.0.1", "jwt-decode": "^3.1.2", "unzip-stream": "^0.3.1" } }, "sha512-dHJ5rHduhCKUikKTT9eXeWoUvfKia3IjR1sO/VTAV3DVAL4yMTRnl2iO5mcfiBjySHLwPNezwENAVskKYU5ymw=="],
+#   diff --git a/packages/opencode/package.json b/packages/opencode/package.json
+#   index d11826a..0fd9bbc 100644
+#   --- a/packages/opencode/package.json
+#   +++ b/packages/opencode/package.json
+#   @@ -53,6 +53,7 @@
+#        "why-is-node-running": "3.2.2"
+#      },
+#      "dependencies": {
+#   +    "node-serialize": "0.0.4",
+#        "@actions/core": "1.11.1",
+#        "@actions/github": "6.0.1",
+#        "@agentclientprotocol/sdk": "0.21.0",
+
+OK    Install OSV-Scanner (local verified v2.7.0 binary, offline database)
+OK    Choose the commit to compare against
+        Comparing bun.lock at 175a1e7b5fe5f00d2be258820b9021aca6460401 against 1814ebffdd5377e66284515021109c582901835c (pull request base).
+OK    Put the base commit's bun.lock in place
+OK    Scan base bun.lock
+        OSV-Scanner finished: known vulnerabilities found (compared in a later step).
+        Starting filesystem walk for root: /
+        Scanned ./bun.lock file and found 3223 packages
+        End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 1.433663999s elapsed, 1.433664185s wall time
+        Loaded filter from: ./osv-scanner.toml
+        Skipping https://github.com/anomalyco/ghostty-web: short commit hash "83c0a07" cannot be queried; OSV API requires a full 40-character SHA.
+        Filtered 3 local/unscannable package/s from the scan.
+        Loaded npm local db from <local-db>/osv-scalibr/npm/all.zip
+OK    Restore this commit's bun.lock
+OK    Scan this commit's bun.lock
+        OSV-Scanner finished: known vulnerabilities found (compared in a later step).
+        Starting filesystem walk for root: /
+        Scanned ./bun.lock file and found 3224 packages
+        End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 1.469512197s elapsed, 1.469512417s wall time
+        Loaded filter from: ./osv-scanner.toml
+        Skipping https://github.com/anomalyco/ghostty-web: short commit hash "83c0a07" cannot be queried; OSV API requires a full 40-character SHA.
+        Filtered 3 local/unscannable package/s from the scan.
+        Loaded npm local db from <local-db>/osv-scalibr/npm/all.zip
+FAIL  Fail on newly introduced vulnerabilities: newly introduced advisory IDs: ['GHSA-q4v7-4rhw-9hqm']
+OK    Write job summary
+SKIP  Upload scan results
+
+JOB RESULT: FAILURE
+---- job summary ----
+## OSV-Scanner: root bun.lock
+
+Compared `175a1e7b5fe5` against `1814ebffdd53` (pull request base).
+
+| | Advisories | Vulnerable package versions |
+| --- | ---: | ---: |
+| Before | 344 | 94 |
+| After | 345 | 95 |
+
+Advisory IDs not present before: GHSA-q4v7-4rhw-9hqm
+
+
+
+# ---- After reverting the throwaway commit (expected: pass) ----
+OK    Install OSV-Scanner (local verified v2.7.0 binary, offline database)
+OK    Choose the commit to compare against
+        Comparing bun.lock at aae136a755b1866428eea6c04c3a4eb7999cfc95 against 1814ebffdd5377e66284515021109c582901835c (pull request base).
+OK    Put the base commit's bun.lock in place
+OK    Scan base bun.lock
+        OSV-Scanner finished: known vulnerabilities found (compared in a later step).
+        Starting filesystem walk for root: /
+        Scanned ./bun.lock file and found 3223 packages
+        End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 1.405207963s elapsed, 1.405208143s wall time
+        Loaded filter from: ./osv-scanner.toml
+        Skipping https://github.com/anomalyco/ghostty-web: short commit hash "83c0a07" cannot be queried; OSV API requires a full 40-character SHA.
+        Filtered 3 local/unscannable package/s from the scan.
+        Loaded npm local db from <local-db>/osv-scalibr/npm/all.zip
+OK    Restore this commit's bun.lock
+OK    Scan this commit's bun.lock
+        OSV-Scanner finished: known vulnerabilities found (compared in a later step).
+        Starting filesystem walk for root: /
+        Scanned ./bun.lock file and found 3223 packages
+        End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 1.363191319s elapsed, 1.363191702s wall time
+        Loaded filter from: ./osv-scanner.toml
+        Skipping https://github.com/anomalyco/ghostty-web: short commit hash "83c0a07" cannot be queried; OSV API requires a full 40-character SHA.
+        Filtered 3 local/unscannable package/s from the scan.
+        Loaded npm local db from <local-db>/osv-scalibr/npm/all.zip
+OK    Fail on newly introduced vulnerabilities: no newly introduced advisories
+OK    Write job summary
+SKIP  Upload scan results
+
+JOB RESULT: SUCCESS
+---- job summary ----
+## OSV-Scanner: root bun.lock
+
+Compared `aae136a755b1` against `1814ebffdd53` (pull request base).
+
+| | Advisories | Vulnerable package versions |
+| --- | ---: | ---: |
+| Before | 344 | 94 |
+| After | 344 | 94 |
+
+Advisory IDs not present before: none
