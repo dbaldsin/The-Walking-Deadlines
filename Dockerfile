@@ -4,8 +4,12 @@
 # packages/app embedded in it. Without the embedded UI the server proxies the
 # frontend from app.opencode.ai, so our own frontend changes would not show.
 
-FROM oven/bun:1.3.14 AS build
+FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS build
 
+# Debian removes superseded package versions from its mirrors, so exact apt
+# pins (DL3008) would break rebuilds; the base image digest is pinned instead.
+# Review when a base image is bumped, and no later than 2027-01-31.
+# hadolint ignore=DL3008
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git python3 make g++ ca-certificates \
   && rm -rf /var/lib/apt/lists/*
@@ -24,8 +28,12 @@ RUN OPENCODE_VERSION="$(bun -p 'require("./packages/opencode/package.json").vers
   && mkdir -p /out \
   && cp packages/opencode/dist/opencode-linux-*/bin/opencode /out/opencode
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 
+# Debian removes superseded package versions from its mirrors, so exact apt
+# pins (DL3008) would break rebuilds; the base image digest is pinned instead.
+# Review when a base image is bumped, and no later than 2027-01-31.
+# hadolint ignore=DL3008
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git ripgrep ca-certificates \
   && rm -rf /var/lib/apt/lists/*
