@@ -1,0 +1,54 @@
+# Check run: change with no dependency changes (this branch vs main)
+# Produced on 2026-10-29 with OSV-Scanner v2.7.0 (release binary, SHA-256
+# 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b verified).
+# Offline mode: api.osv.dev was not reachable from the machine used, so the
+# database was built from the GitHub Advisory Database (github/advisory-database
+# @ f9caf57, 8,034 reviewed npm advisories) in OSV format. CI queries the live
+# OSV database, which also includes non-GitHub sources, so CI counts can be
+# slightly higher.
+# The workflow's run: steps (.github/workflows/osv-scanner.yml) were executed
+# in order from the YAML. Only the install step used the already-verified local
+# binary, and the reporter step used a re-implementation of osv-reporter's
+# gate (DiffVulnerabilityResultsByOccurrences): fail if any advisory ID occurs
+# more times after the change than before.
+# Event: push, base = previous main tip 4c41de6. Expected: pass.
+
+OK    Install OSV-Scanner (local verified v2.7.0 binary, offline database)
+OK    Choose the commit to compare against
+        Comparing bun.lock at 1814ebffdd5377e66284515021109c582901835c against 4c41de63016bb3f3012971d8b0c5cec8bb0910e5 (previous tip of the pushed branch).
+OK    Put the base commit's bun.lock in place
+OK    Scan base bun.lock
+        OSV-Scanner finished: known vulnerabilities found (compared in a later step).
+        Starting filesystem walk for root: /
+        Scanned ./bun.lock file and found 3223 packages
+        End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 1.480055424s elapsed, 1.480055665s wall time
+        Loaded filter from: ./osv-scanner.toml
+        Skipping https://github.com/anomalyco/ghostty-web: short commit hash "83c0a07" cannot be queried; OSV API requires a full 40-character SHA.
+        Filtered 3 local/unscannable package/s from the scan.
+        Loaded npm local db from <local-db>/osv-scalibr/npm/all.zip
+OK    Restore this commit's bun.lock
+OK    Scan this commit's bun.lock
+        OSV-Scanner finished: known vulnerabilities found (compared in a later step).
+        Starting filesystem walk for root: /
+        Scanned ./bun.lock file and found 3223 packages
+        End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 1.348833768s elapsed, 1.348834054s wall time
+        Loaded filter from: ./osv-scanner.toml
+        Skipping https://github.com/anomalyco/ghostty-web: short commit hash "83c0a07" cannot be queried; OSV API requires a full 40-character SHA.
+        Filtered 3 local/unscannable package/s from the scan.
+        Loaded npm local db from <local-db>/osv-scalibr/npm/all.zip
+OK    Fail on newly introduced vulnerabilities: no newly introduced advisories
+OK    Write job summary
+SKIP  Upload scan results
+
+JOB RESULT: SUCCESS
+---- job summary ----
+## OSV-Scanner: root bun.lock
+
+Compared `1814ebffdd53` against `4c41de63016b` (previous tip of the pushed branch).
+
+| | Advisories | Vulnerable package versions |
+| --- | ---: | ---: |
+| Before | 344 | 94 |
+| After | 344 | 94 |
+
+Advisory IDs not present before: none

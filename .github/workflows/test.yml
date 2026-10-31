@@ -170,9 +170,15 @@ jobs:
           failure-threshold: warning
           no-color: true
 
+  dependency-scan:
+    # OSV-Scanner on the root bun.lock; fails only on newly added advisories.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/osv-scanner.yml
+
   deploy:
     # Add each new blocking tool job to needs when its owner integrates it.
-    needs: [unit, e2e, typecheck, dockerfile-lint]
+    needs: [unit, e2e, typecheck, dockerfile-lint, dependency-scan]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read

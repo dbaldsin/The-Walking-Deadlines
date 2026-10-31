@@ -1,0 +1,195 @@
+name: osv-scanner
+
+# Dependency vulnerability scan of the root bun.lock (P3B, owner: Saif).
+#
+# Called by test.yml on every pull request, push and manual run, and listed in
+# test.yml's deploy.needs, so a failure here blocks the VM deployment.
+#
+# Policy (design doc, Section 4): fail only when a change ADDS a known
+# vulnerability. main already has hundreds of published advisories, so a plain
+# full scan would fail on every PR, including ones that never touch
+# dependencies. Instead this job scans the lockfile before and after the change
+# and uses the official osv-reporter to compare the two results, the same way
+# google/osv-scanner-action's osv-scanner-reusable-pr.yml does. That workflow is
+# inlined here because it only works on pull_request events (it relies on
+# GITHUB_BASE_REF), while this job must also gate pushes to main.
+#
+# The full list of existing findings is reported weekly by
+# osv-scanner-weekly.yml, which does not block anything.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  osv-scanner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Two commits so a manual run can compare against the previous commit.
+          fetch-depth: 2
+
+      - name: Install OSV-Scanner
+        # Pinned release binary, checked against the SHA-256 published in the
+        # release's osv-scanner_SHA256SUMS. The binary (not the Docker action)
+        # is used so the job can see the scanner's exit code.
+        env:
+          OSV_SCANNER_VERSION: "2.7.0"
+          OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/osv-scanner"
+          curl -sSfL --retry 3 -o "$bin" \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  ${bin}" | sha256sum -c -
+          chmod +x "$bin"
+          "$bin" --version
+          echo "OSV_SCANNER=${bin}" >> "$GITHUB_ENV"
+
+      - name: Choose the commit to compare against
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          zero=0000000000000000000000000000000000000000
+          base=""
+          why=""
+          case "$EVENT" in
+            pull_request)
+              base="$PR_BASE"; why="pull request base" ;;
+            push)
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != "$zero" ]; then
+                base="$BEFORE"; why="previous tip of the pushed branch"
+              fi ;;
+            *)
+              if base=$(git rev-parse --verify -q HEAD^1); then
+                why="parent commit"
+              else
+                base=""
+              fi ;;
+          esac
+
+          if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$base" || base=""
+          fi
+
+          if [ -z "$base" ]; then
+            # New branch, or the previous commit is gone (force push):
+            # compare against the default branch instead.
+            git fetch --no-tags --depth=1 origin "refs/heads/${DEFAULT_BRANCH}"
+            base=$(git rev-parse FETCH_HEAD)
+            why="tip of ${DEFAULT_BRANCH}, no usable previous commit"
+            echo "::notice::Comparing against ${why}."
+          fi
+
+          echo "Comparing bun.lock at ${GITHUB_SHA} against ${base} (${why})."
+          echo "sha=${base}" >> "$GITHUB_OUTPUT"
+          echo "why=${why}" >> "$GITHUB_OUTPUT"
+
+      - name: Put the base commit's bun.lock in place
+        id: swap
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          cp bun.lock "${RUNNER_TEMP}/head-bun.lock"
+          # Only bun.lock is swapped, so both scans read the same path and the
+          # same osv-scanner.toml from this commit.
+          if git show "${BASE_SHA}:bun.lock" > bun.lock 2>/dev/null; then
+            echo "has-base-lockfile=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::The base commit has no bun.lock; every finding counts as new."
+            echo '{"results":[]}' > old-results.json
+            echo "has-base-lockfile=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Scan base bun.lock
+        if: steps.swap.outputs.has-base-lockfile == 'true'
+        run: .github/scripts/osv-scan.sh old-results.json
+
+      - name: Restore this commit's bun.lock
+        run: |
+          set -euo pipefail
+          cp "${RUNNER_TEMP}/head-bun.lock" bun.lock
+          git diff --exit-code --stat -- bun.lock
+
+      - name: Scan this commit's bun.lock
+        run: .github/scripts/osv-scan.sh new-results.json
+
+      - name: Fail on newly introduced vulnerabilities
+        uses: google/osv-scanner-action/osv-reporter-action@0a65f82af05cd58cf587827b0bb0489548c18346 # v2.7.0
+        with:
+          scan-args: |-
+            --old=old-results.json
+            --new=new-results.json
+            --output-files=markdown:new-vulnerabilities.md
+            --gh-annotations=true
+            --fail-on-vuln=true
+
+      - name: Write job summary
+        if: ${{ !cancelled() }}
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+          BASE_WHY: ${{ steps.base.outputs.why }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+
+          def load(path):
+              try:
+                  with open(path) as f:
+                      data = json.load(f)
+              except (OSError, ValueError):
+                  return None
+              ids, pkgs = set(), set()
+              for source in data.get("results") or []:
+                  for p in source.get("packages") or []:
+                      vulns = p.get("vulnerabilities") or []
+                      if vulns:
+                          pkgs.add((p["package"]["name"], p["package"]["version"]))
+                          ids.update(v["id"] for v in vulns)
+              return ids, pkgs
+
+          old, new = load("old-results.json"), load("new-results.json")
+          print("## OSV-Scanner: root bun.lock")
+          print()
+          print(f"Compared `{os.environ['GITHUB_SHA'][:12]}` against "
+                f"`{os.environ.get('BASE_SHA', '')[:12]}` ({os.environ.get('BASE_WHY', '')}).")
+          print()
+          if old is None or new is None:
+              print("A scan did not complete, so no comparison was made.")
+          else:
+              print("| | Advisories | Vulnerable package versions |")
+              print("| --- | ---: | ---: |")
+              print(f"| Before | {len(old[0])} | {len(old[1])} |")
+              print(f"| After | {len(new[0])} | {len(new[1])} |")
+              print()
+              added = sorted(new[0] - old[0])
+              print(f"Advisory IDs not present before: {', '.join(added) if added else 'none'}")
+          print()
+          if os.path.exists("new-vulnerabilities.md"):
+              print("### Newly introduced (from osv-reporter)")
+              print()
+              print(open("new-vulnerabilities.md").read())
+          PY
+
+      - name: Upload scan results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: osv-scanner-results-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            old-results.json
+            new-results.json
+            new-vulnerabilities.md
