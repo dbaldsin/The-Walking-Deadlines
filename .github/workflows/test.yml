@@ -18,6 +18,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  gitleaks:
+    name: gitleaks
+    uses: ./.github/workflows/gitleaks.yml
   typecheck:
     uses: ./.github/workflows/typecheck.yml
 
@@ -172,7 +175,7 @@ jobs:
 
   deploy:
     # Add each new blocking tool job to needs when its owner integrates it.
-    needs: [unit, e2e, typecheck, dockerfile-lint]
+    needs: [unit, e2e, typecheck, dockerfile-lint, gitleaks]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
