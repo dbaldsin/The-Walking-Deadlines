@@ -43,8 +43,7 @@ jobs:
 
           echo "range=$RANGE" >> "$GITHUB_OUTPUT"
           echo "Scanning Git range: $RANGE"
-          git log --oneline --diff-merges=first-parent $RANGE | head -30
-
+          git log --oneline --no-patch -n 30 $RANGE
       - name: Scan repository history with Gitleaks
         shell: bash
         env:
