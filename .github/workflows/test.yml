@@ -1,3 +1,4 @@
+
 name: test
 
 on:
@@ -18,6 +19,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  gitleaks:
+    name: gitleaks
+    uses: ./.github/workflows/gitleaks.yml
+
   typecheck:
     uses: ./.github/workflows/typecheck.yml
 
@@ -62,8 +67,7 @@ jobs:
       - name: Run unit tests
         timeout-minutes: 15
         # Default turbo concurrency (10) oversubscribes ubuntu-latest's 4
-        # vCPUs across 5 packages' test tasks running at once — same
-        # contention issue typecheck.yml already caps for tsgo.
+        # vCPUs across 5 packages' test tasks running at once — see typecheck.
         run: GITHUB_ACTIONS=false bun turbo test --concurrency=4
 
       - name: Check generated client
@@ -76,11 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-      # Default CI worker count (5) oversubscribes a standard GitHub-hosted
-      # runner running a live Vite dev server alongside that many Chromium
-      # instances, producing widespread toBeVisible() timeouts unrelated to
-      # the features under test. Lower concurrency trades wall-clock time
-      # for reliability.
+      # Lower concurrency for reliable browser testing.
       PLAYWRIGHT_WORKERS: "2"
     defaults:
       run:
@@ -94,7 +94,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
+          # Playwright 1.59 hangs with Node 24.16.
           node-version: "24.15"
 
       - name: Setup Bun
@@ -123,9 +123,7 @@ jobs:
         run: bunx playwright install chromium
 
       - name: Run app e2e smoke tests
-        # Full regression suite (packages/app/e2e/regression) runs nightly
-        # instead of on every push — see e2e-regression.yml. This keeps
-        # every-push feedback fast while still catching broad regressions.
+        # Full regression suite runs nightly instead of on every push.
         run: bun --cwd packages/app test:e2e:local e2e/smoke e2e/user-story
         env:
           CI: true
@@ -160,9 +158,6 @@ jobs:
           fi
 
       - name: Lint deployment Dockerfile
-        # The action image pins hadolint v2.15.1 by digest. Its default
-        # HADOLINT_FAILURE_THRESHOLD env (info) overrides the config file, so
-        # the threshold is repeated here to match .hadolint.yaml.
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile
@@ -175,10 +170,10 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/osv-scanner.yml
-
+    
   deploy:
-    # Add each new blocking tool job to needs when its owner integrates it.
-    needs: [unit, e2e, typecheck, dockerfile-lint, dependency-scan]
+    # All required checks must pass before deployment.
+    needs: [unit, e2e, typecheck, dockerfile-lint, dependency-scan, gitleaks]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
