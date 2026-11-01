@@ -1,0 +1,21 @@
+# OSV-Scanner configuration for the root bun.lock (owner: Saif).
+# Read automatically by osv-scanner because it sits next to bun.lock.
+# Used by .github/workflows/osv-scanner.yml and osv-scanner-weekly.yml.
+#
+# Exception policy (design doc, Section 4):
+# - One entry per advisory ID. No blanket ignores for whole packages or
+#   severity levels.
+# - Every entry needs a reason that names an owner, and an ignoreUntil date.
+#   After that date the finding reappears and must be reviewed again.
+# - Prefer upgrading the package in a normal PR over adding an exception.
+#
+# The PR/push check only fails on advisories a change ADDS, so existing
+# findings on main do not need exceptions to keep the pipeline green.
+# No exceptions have been needed so far.
+#
+# Template:
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-31
+# reason = "Owner: <name>. Why this is not exploitable in how we use the package, and the plan to remove it."
