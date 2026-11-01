@@ -8,14 +8,123 @@ jobs:
   gitleaks:
     name: Scan for committed secrets
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Checkout full Git history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v3
+      - name: Determine complete scan range
+        id: range
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT" == "pull_request" ]]; then
+            RANGE="$PR_BASE..$PR_HEAD"
+          elif [[ "$EVENT" == "push" ]]; then
+            if [[ "$PUSH_BEFORE" =~ ^0+$ ]] ||
+               ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+              RANGE="--all"
+            else
+              RANGE="$PUSH_BEFORE..$GITHUB_SHA"
+            fi
+          else
+            RANGE="--all"
+          fi
+
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+          echo "Scanning Git range: $RANGE"
+          git log --oneline --diff-merges=first-parent $RANGE | head -30
+
+      - name: Scan repository history with Gitleaks
+        shell: bash
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          IMAGE="ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
+
+          docker run --rm \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=safe.directory \
+            -e GIT_CONFIG_VALUE_0=/repo \
+            -v "$GITHUB_WORKSPACE:/repo" \
+            -w /repo "$IMAGE" \
+            git --redact --verbose \
+            --log-opts="--diff-merges=first-parent $RANGE"
+
+      - name: Verify detection across merged and removed commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
+
+          mkdir -p artifacts/gitleaks
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+
+          git -C "$TMP" init -q
+          git -C "$TMP" config user.name "CI Test"
+          git -C "$TMP" config user.email "ci@example.invalid"
+
+          echo "Safe initial content" > "$TMP/README.md"
+          git -C "$TMP" add .
+          git -C "$TMP" commit -qm "Initial safe commit"
+          BASE=$(git -C "$TMP" rev-parse HEAD)
+
+          git -C "$TMP" switch -qc side
+          printf 'token = "%s%s"\n' \
+            'ghp_' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' \
+            > "$TMP/test-secret.txt"
+          git -C "$TMP" add .
+          git -C "$TMP" commit -qm "Introduce synthetic secret"
+
+          git -C "$TMP" switch -qc main "$BASE"
+          echo "Another safe change" >> "$TMP/README.md"
+          git -C "$TMP" add .
+          git -C "$TMP" commit -qm "Safe main change"
+          git -C "$TMP" merge --no-ff -qm "Merge side" side
+
+          git -C "$TMP" rm -q test-secret.txt
+          git -C "$TMP" commit -qm "Remove synthetic secret"
+
+          set +e
+          docker run --rm \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=safe.directory \
+            -e GIT_CONFIG_VALUE_0=/scan \
+            -v "$TMP:/scan" -w /scan "$IMAGE" \
+            git --redact --verbose \
+            --report-format=json \
+            --report-path=/scan/findings.json \
+            --log-opts="--diff-merges=first-parent $BASE..HEAD" \
+            > artifacts/gitleaks/detection-test.log 2>&1
+          STATUS=$?
+          set -e
+
+          if [[ "$STATUS" -ne 1 ]] ||
+             ! grep -q '"RuleID"' "$TMP/findings.json"; then
+            echo "Expected synthetic-secret detection was not verified."
+            cat artifacts/gitleaks/detection-test.log
+            exit 1
+          fi
+
+          echo "PASS: Gitleaks detected a fake secret introduced"
+          echo "on a merged branch and removed in a later commit."
+          echo "PASS: The scan correctly returned a failing status."
+
+      - name: Upload detection test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rashid-gitleaks-evidence
+          path: artifacts/gitleaks/detection-test.log
+          if-no-files-found: warn
