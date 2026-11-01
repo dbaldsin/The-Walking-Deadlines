@@ -1,0 +1,88 @@
+name: osv-scanner-weekly
+
+# Weekly full OSV-Scanner report for the root bun.lock (P3B, owner: Saif).
+#
+# Lists every known advisory in the lockfile, including ones published after a
+# package was merged. It reports only: it is not part of test.yml, not a
+# dependency of deployment and not a required status. It fails only when the
+# scan itself does not complete (see .github/scripts/osv-scan.sh), so a broken
+# scan is never shown as clean.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC (09:00 Qatar)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  osv-full-report:
+    name: osv-scanner (weekly full report)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install OSV-Scanner
+        # Pinned release binary, checked against the SHA-256 published in the
+        # release's osv-scanner_SHA256SUMS. The binary (not the Docker action)
+        # is used so the job can see the scanner's exit code.
+        env:
+          OSV_SCANNER_VERSION: "2.7.0"
+          OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/osv-scanner"
+          curl -sSfL --retry 3 -o "$bin" \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  ${bin}" | sha256sum -c -
+          chmod +x "$bin"
+          "$bin" --version
+          echo "OSV_SCANNER=${bin}" >> "$GITHUB_ENV"
+
+      - name: Scan bun.lock
+        run: .github/scripts/osv-scan.sh results.json
+
+      - name: Render report
+        uses: google/osv-scanner-action/osv-reporter-action@0a65f82af05cd58cf587827b0bb0489548c18346 # v2.7.0
+        with:
+          scan-args: |-
+            --new=results.json
+            --output-files=markdown:report.md
+            --fail-on-vuln=false
+
+      - name: Write job summary
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          data = json.load(open("results.json"))
+          ids, pkgs = set(), set()
+          for source in data.get("results") or []:
+              for p in source.get("packages") or []:
+                  vulns = p.get("vulnerabilities") or []
+                  if vulns:
+                      pkgs.add((p["package"]["name"], p["package"]["version"]))
+                      ids.update(v["id"] for v in vulns)
+          print("## OSV-Scanner weekly report: root bun.lock")
+          print()
+          print(f"{len(ids)} known advisories across {len(pkgs)} vulnerable package versions "
+                f"({len({n for n, _ in pkgs})} package names).")
+          print()
+          print("Report only. Triage findings in deployed packages (packages/opencode) first:")
+          print("upgrade through a normal PR, or add a dated exception to osv-scanner.toml.")
+          print()
+          print(open("report.md").read())
+          PY
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: osv-scanner-weekly-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            results.json
+            report.md

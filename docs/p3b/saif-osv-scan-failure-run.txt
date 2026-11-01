@@ -1,0 +1,44 @@
+# Check run: scanner cannot complete (database unavailable)
+# Produced on 2026-10-29 with OSV-Scanner v2.7.0 (release binary, SHA-256
+# 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b verified).
+# Offline mode: api.osv.dev was not reachable from the machine used, so the
+# database was built from the GitHub Advisory Database (github/advisory-database
+# @ f9caf57, 8,034 reviewed npm advisories) in OSV format. CI queries the live
+# OSV database, which also includes non-GitHub sources, so CI counts can be
+# slightly higher.
+# The workflow's run: steps (.github/workflows/osv-scanner.yml) were executed
+# in order from the YAML. Only the install step used the already-verified local
+# binary, and the reporter step used a re-implementation of osv-reporter's
+# gate (DiffVulnerabilityResultsByOccurrences): fail if any advisory ID occurs
+# more times after the change than before.
+# Event: push, scanner pointed at an empty database directory. osv-scanner
+# exits 127 but still writes an empty results file, which looks like a clean
+# scan. Expected: fail rather than pass as clean.
+
+OK    Install OSV-Scanner (local verified v2.7.0 binary, offline database)
+OK    Choose the commit to compare against
+        Comparing bun.lock at 1814ebffdd5377e66284515021109c582901835c against 4c41de63016bb3f3012971d8b0c5cec8bb0910e5 (previous tip of the pushed branch).
+OK    Put the base commit's bun.lock in place
+FAIL  Scan base bun.lock
+        ::error::OSV-Scanner did not complete (exit code 127). Not treating this as a clean result.
+        Starting filesystem walk for root: /
+        Scanned ./bun.lock file and found 3223 packages
+        End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 1.329830795s elapsed, 1.329830933s wall time
+        Loaded filter from: ./osv-scanner.toml
+        Skipping https://github.com/anomalyco/ghostty-web: short commit hash "83c0a07" cannot be queried; OSV API requires a full 40-character SHA.
+        Filtered 3 local/unscannable package/s from the scan.
+        could not load db for npm ecosystem: unable to fetch OSV database: no offline version of the OSV database is available
+        Error during extraction: (extracting as vulnmatch/osvlocal) unable to fetch OSV database: no offline version of the OSV database is available
+SKIP  Restore this commit's bun.lock (earlier failure)
+SKIP  Scan this commit's bun.lock (earlier failure)
+SKIP  Fail on newly introduced vulnerabilities (earlier failure)
+OK    Write job summary
+SKIP  Upload scan results
+
+JOB RESULT: FAILURE
+---- job summary ----
+## OSV-Scanner: root bun.lock
+
+Compared `1814ebffdd53` against `4c41de63016b` (previous tip of the pushed branch).
+
+A scan did not complete, so no comparison was made.
