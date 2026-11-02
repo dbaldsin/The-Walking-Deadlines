@@ -141,7 +141,8 @@
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",
     "@types/bun": "catalog:",
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "typed-rest-client": "3.1.2"
   },
   "patchedDependencies": {
     "@dnd-kit/dom@0.5.0": "patches/@dnd-kit%2Fdom@0.5.0.patch",

@@ -1,0 +1,23 @@
+# Deliberate failure: Translator.shell tests temporarily skipped (describe -> describe.skip in
+# packages/opencode/test/translator/index.test.ts). Test file restored afterwards; not committed.
+# Local run, commit e305530. Expected: score under 50%, nonzero exit. Actual exit: 1.
+# Replace or extend with the GitHub Actions log from the throwaway PR.
+
+$ stryker run
+16:12:22 (135867) INFO ProjectReader Found 1 of 776 file(s) to be mutated.
+16:12:23 (135867) INFO Instrumenter Instrumented 1 source file(s) with 926 mutant(s)
+16:12:23 (135867) INFO ConcurrencyTokenProvider Creating 9 test runner process(es).
+16:12:24 (135867) INFO DryRunExecutor Starting initial test run (command test runner with "off" coverage analysis). This may take a while.
+16:12:24 (135867) INFO DryRunExecutor Initial test run succeeded. Ran 1 tests in 0 seconds (net 31 ms, overhead 0 ms).
+Ran 1.00 tests per mutant on average.
+----------|------------------|----------|-----------|------------|----------|----------|
+          | % Mutation score |          |           |            |          |          |
+File      |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+----------|--------|---------|----------|-----------|------------|----------|----------|
+All files |   4.97 |    4.97 |       46 |         0 |        880 |        0 |        0 |
+ index.ts |   4.97 |    4.97 |       46 |         0 |        880 |        0 |        0 |
+----------|--------|---------|----------|-----------|------------|----------|----------|
+16:12:27 (135867) ERROR MutationTestReportHelper Final mutation score 4.97 under breaking threshold 50, setting exit code to 1 (failure).
+16:12:27 (135867) INFO MutationTestReportHelper (improve mutation score or set `thresholds.break = null` to prevent this error in the future)
+16:12:27 (135867) INFO HtmlReporter Your report can be found at: file:///workspaces/The-Walking-Deadlines/packages/opencode/reports/mutation/index.html
+16:12:27 (135867) INFO MutationTestExecutor Done in 4 seconds.

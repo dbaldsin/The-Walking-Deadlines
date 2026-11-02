@@ -8,6 +8,7 @@
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "bun test --timeout 30000 --only-failures",
+    "test:mutation": "stryker run",
     "test:httpapi": "bun run script/httpapi-exercise.ts --mode coverage --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode auth --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode effect --fail-on-missing --fail-on-skip",
     "bench:test": "bun run script/bench-test-suite.ts",
     "profile:test": "bun run script/profile-test-files.ts",
@@ -35,6 +36,7 @@
     "@opencode-ai/http-recorder": "workspace:*",
     "@opencode-ai/script": "workspace:*",
     "@standard-schema/spec": "1.0.0",
+    "@stryker-mutator/core": "10.1.1",
     "@tsconfig/bun": "catalog:",
     "@types/babel__core": "7.20.5",
     "@types/bun": "catalog:",

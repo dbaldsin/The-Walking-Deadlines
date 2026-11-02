@@ -1,0 +1,21 @@
+# Local run of `bun run test:mutation` from packages/opencode, commit e305530 (Bun 1.3.14, dev container).
+# Expected: score at or above the break threshold of 50%, exit 0. Actual exit: 0.
+# Replace or extend with the GitHub Actions log of the mutation-test job once it has run.
+
+$ stryker run
+16:12:17 (120995) INFO ProjectReader Found 1 of 776 file(s) to be mutated.
+16:12:17 (120995) INFO Instrumenter Instrumented 1 source file(s) with 926 mutant(s)
+16:12:18 (120995) INFO ConcurrencyTokenProvider Creating 9 test runner process(es).
+16:12:18 (120995) INFO DryRunExecutor Starting initial test run (command test runner with "off" coverage analysis). This may take a while.
+16:12:18 (120995) INFO DryRunExecutor Initial test run succeeded. Ran 1 tests in 0 seconds (net 29 ms, overhead 0 ms).
+Ran 1.00 tests per mutant on average.
+----------|------------------|----------|-----------|------------|----------|----------|
+          | % Mutation score |          |           |            |          |          |
+File      |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+----------|--------|---------|----------|-----------|------------|----------|----------|
+All files |  50.22 |   50.22 |      465 |         0 |        461 |        0 |        0 |
+ index.ts |  50.22 |   50.22 |      465 |         0 |        461 |        0 |        0 |
+----------|--------|---------|----------|-----------|------------|----------|----------|
+16:12:22 (120995) INFO MutationTestReportHelper Final mutation score of 50.22 is greater than or equal to break threshold 50
+16:12:22 (120995) INFO HtmlReporter Your report can be found at: file:///workspaces/The-Walking-Deadlines/packages/opencode/reports/mutation/index.html
+16:12:22 (120995) INFO MutationTestExecutor Done in 4 seconds.
