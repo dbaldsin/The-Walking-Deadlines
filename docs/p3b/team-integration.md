@@ -12,7 +12,7 @@ The two historical browser scenarios now set their date before the September 14,
 
 | Owner | New check |
 | --- | --- |
-| Jassim | actionlint for workflows |
+| Jassim | Stryker mutation testing for the permission translator (replaces actionlint, which did not meet the criteria) |
 | Rashid | Gitleaks for committed credentials |
 | Saif | OSV-Scanner for root bun.lock |
 | Sangyoon | Hadolint for root deployment Dockerfile |
