@@ -100,6 +100,10 @@ export async function setupTimeline(
     protocol?: "v1" | "v2"
   } = {},
 ) {
+  // Legacy-layout scenarios must run before the September 14 retirement date.
+  if (input.settings?.newLayoutDesigns === false) {
+    await page.clock.setFixedTime(new Date("2026-09-12T12:00:00Z"))
+  }
   const sessions = input.sessions ?? [session()]
   const messages = validateTimelineMessages([
     ...(input.seedHistory ? historyMessages(18) : []),

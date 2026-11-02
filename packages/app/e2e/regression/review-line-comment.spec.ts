@@ -50,14 +50,18 @@ test("shows a comment button when a line number is hovered", async ({ page }) =>
   await expectAppVisible(lineNumber)
 
   const comment = review.getByRole("button", { name: "Comment", exact: true })
-  await expect(async () => {
-    await lineNumber.hover()
-    await expect(lineNumber).toHaveAttribute("data-hovered", "")
-    await expect(comment).toHaveCount(1)
-    await expect(comment).toHaveCSS("pointer-events", "auto")
-    await comment.focus()
-    await expect(comment).toBeFocused()
-  }).toPass({ timeout: 10_000 })
+  await expect
+    .poll(async () => {
+      // Re-enter after async diff replacement instead of leaving the pointer stationary.
+      await review.getByText("export const first = 1", { exact: true }).hover()
+      await lineNumber.hover()
+      return lineNumber.getAttribute("data-hovered")
+    })
+    .toBe("")
+  await expect(comment).toHaveCount(1)
+  await expect(comment).toHaveCSS("pointer-events", "auto")
+  await comment.focus()
+  await expect(comment).toBeFocused()
   await comment.press("Enter")
   await expect(review.getByRole("textbox")).toBeVisible()
   await expect(review.locator('[data-slot="line-comment-editor-label"]')).toHaveText("Commenting on line 1")

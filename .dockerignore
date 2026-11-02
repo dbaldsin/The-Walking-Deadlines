@@ -1,0 +1,15 @@
+.git
+.opencode
+.sst
+.turbo
+.wrangler
+node_modules
+**/node_modules
+**/.output
+**/dist
+**/.turbo
+**/.vite
+**/coverage
+**/test-results
+**/playwright-report
+artifacts

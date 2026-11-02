@@ -1,0 +1,20 @@
+# dockerfile-lint on PR #45, commit 6d00138. Expected: no findings, exit 0.
+# https://github.com/dbaldsin/The-Walking-Deadlines/actions/runs/41093836652/job/124194326594
+
+2026-10-30T16:52:53.9255460Z ##[group]Run hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387
+2026-10-30T16:52:53.9255784Z with:
+2026-10-30T16:52:53.9255954Z   dockerfile: Dockerfile
+2026-10-30T16:52:53.9256151Z   config: .hadolint.yaml
+2026-10-30T16:52:53.9256359Z   failure-threshold: warning
+2026-10-30T16:52:53.9256553Z   no-color: true
+2026-10-30T16:52:53.9256724Z   recursive: false
+2026-10-30T16:52:53.9256904Z   output-file: /dev/stdout
+2026-10-30T16:52:53.9257092Z   no-fail: false
+2026-10-30T16:52:53.9257505Z   verbose: false
+2026-10-30T16:52:53.9257666Z   format: tty
+2026-10-30T16:52:53.9257831Z env:
+2026-10-30T16:52:53.9258012Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-10-30T16:52:53.9258228Z ##[endgroup]
+2026-10-30T16:52:55.0789140Z 
+2026-10-30T16:52:55.0790021Z Hadolint output saved to: /dev/stdout
+2026-10-30T16:52:55.1685615Z Post job cleanup.

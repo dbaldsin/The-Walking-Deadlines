@@ -1,0 +1,13 @@
+# Hadolint configuration for the root deployment Dockerfile (P3B).
+# Only that Dockerfile is linted in CI; the other Dockerfiles in this repo
+# come from upstream opencode and are never built for our VM.
+
+# Block on errors and warnings. Info and style findings are still printed in
+# the job log but do not fail the pipeline.
+failure-threshold: warning
+
+# Both base images come from Docker Hub. A FROM line that pulls from any other
+# registry fails with DL3026 so the deployed image cannot silently switch to
+# an unreviewed source.
+trustedRegistries:
+  - docker.io
