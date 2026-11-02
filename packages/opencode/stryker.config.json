@@ -5,6 +5,7 @@
     "command": "bun --config=/dev/null test test/translator"
   },
   "coverageAnalysis": "off",
+  "tempDirName": "/tmp/opencode-stryker",
   "mutate": ["src/translator/index.ts"],
   "reporters": ["clear-text", "progress", "html"],
   "htmlReporter": {
