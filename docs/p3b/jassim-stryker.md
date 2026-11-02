@@ -14,6 +14,7 @@ The whole repository is out of scope. The main packages hold about 229,000 lines
 - `packages/opencode/stryker.config.json` holds the configuration.
 - `.github/workflows/test.yml` adds the `mutation-test` job and adds it to `jobs.deploy.needs`, so a failing mutation score skips deployment.
 - `packages/opencode/.gitignore` ignores the generated HTML report (`/reports/mutation`).
+- Root `package.json` overrides `typed-rest-client` to `3.1.2`. Stryker 10.1.1 requires `~2.3.0`, and 2.3.1 pins `qs` to exactly `6.15.1`, which has four advisories (GHSA-4mjr-xmp4-gh2g, GHSA-6pq8-jhm2-2vcw, GHSA-q8mj-m7cp-5q26, GHSA-x5fp-wj9c-mxmx). Saif's OSV-Scanner job caught this on the first push. Version 3.1.2 depends on `qs ^6.16.0` (resolves to 6.17.1, no advisories). Stryker only uses `typed-rest-client` for `stryker init` and its online dashboard reporter, neither of which this setup uses, and the mutation run is unchanged at 50.22%. None of the 103 packages this PR adds to `bun.lock` has a known OSV advisory. Remove the override once a Stryker release accepts `typed-rest-client` 3.x.
 
 No secret was added. The job only needs `contents: read`.
 
