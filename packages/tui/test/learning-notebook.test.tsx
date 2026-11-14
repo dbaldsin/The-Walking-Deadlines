@@ -93,14 +93,16 @@ test("Notebook renders only the selected Markdown and expands saved sources loca
   await using tmp = await tmpdir()
   await using view = await learningView(tmp.path, 140, 36, { entries })
   await view.click("learning-notebook")
-  expect(descendants(view.find("learning-body")!).filter((node) => node instanceof MarkdownRenderable)).toHaveLength(1)
+  expect(
+    descendants(view.find("learning-notebook-body")!).filter((node) => node instanceof MarkdownRenderable),
+  ).toHaveLength(1)
   expect(view.app.captureCharFrame()).not.toContain("SAVED EVIDENCE: 2 passes")
   await view.click("notebook-sources")
   await view.click("evidence-answer-saved-test")
   expect(view.app.captureCharFrame()).toContain("SAVED EVIDENCE: 2 passes")
   expect(view.asked).toHaveLength(0)
   expect(view.records.source.entries[0]).toEqual(entries[0])
-  const body = view.find("learning-body") as ScrollBoxRenderable
+  const body = view.find("learning-notebook-body") as ScrollBoxRenderable
   body.scrollChildIntoView("notebook-entry-note")
   await view.flush()
   expect(view.find("notebook-entry-note")!.y).toBeGreaterThanOrEqual(body.viewport.y)
@@ -170,15 +172,19 @@ test("opening Notebook from a long scrolled chat reveals its heading, filters an
   const turn = learningTurn()
   turn.reply.explanation = Array.from({ length: 50 }, (_, i) => `Paragraph ${i}: completed test evidence.`).join("\n\n")
   await using view = await learningView(tmp.path, 140, 24, { entries, turns: [turn] })
-  const body = view.find("learning-body") as ScrollBoxRenderable
-  body.scrollTo(body.scrollHeight)
+  const chat = view.find("learning-body") as ScrollBoxRenderable
+  chat.scrollTo(chat.scrollHeight)
   await view.flush()
-  expect(body.scrollTop).toBeGreaterThan(0)
+  const offset = chat.scrollTop
+  expect(offset).toBeGreaterThan(0)
   await view.click("learning-notebook")
+  const body = view.find("learning-notebook-body") as ScrollBoxRenderable
   expect(body.scrollTop).toBe(0)
   const frame = view.app.captureCharFrame()
   expect(frame).toContain("Project notebook")
   expect(frame).toContain("Answers · 1")
   expect(frame).toContain("Why zero matters")
   expect(view.find("notebook-entry-answer")!.y).toBeGreaterThanOrEqual(body.viewport.y)
+  await view.click("learning-chat")
+  expect(chat.scrollTop).toBe(offset)
 })

@@ -69,6 +69,7 @@ export async function learningView(
   })
   const asked: { question: string; presentation?: Learning.Presentation }[] = []
   const sent: string[] = []
+  const deliveries: { sourceID: string; text: string; proposalID: string }[] = []
   const removed: string[] = []
   const toasts: { variant: string; message: string }[] = []
   let main: TextareaRenderable | undefined
@@ -88,8 +89,9 @@ export async function learningView(
     cancel: async () => set("source", { busy: false, pending: undefined }),
     pause: (_id: string, paused: boolean) => set("source", "paused", paused),
     dismiss: () => set("source", "topic", undefined),
-    send: async (_id: string, text: string) => {
+    send: async (sourceID: string, text: string, proposalID: string) => {
       sent.push(text)
+      deliveries.push({ sourceID, text, proposalID })
       set("source", "delivery", { id: "sent", proposalID: "p", status: "sent", text })
     },
     checkDelivery: async () => {},
@@ -224,6 +226,7 @@ export async function learningView(
     setCodingQuestion,
     asked,
     sent,
+    deliveries,
     removed,
     toasts,
     main: () => main!,

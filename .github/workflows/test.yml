@@ -75,6 +75,11 @@ jobs:
         working-directory: packages/client
         run: bun run check:generated
 
+      - name: Run learning companion properties
+        timeout-minutes: 5
+        working-directory: packages/tui
+        run: bun test test/learning-companion.property.test.ts
+
   e2e:
     name: e2e (smoke)
     runs-on: ubuntu-latest

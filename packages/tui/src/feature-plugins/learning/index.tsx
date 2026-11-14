@@ -68,7 +68,9 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
           : theme().accent
   const blocked = () => !latest() || record()?.busy || editor() !== "question" || tab() !== "chat"
   const composer = () => tab() === "chat" || editor() !== "question"
-  let scroll: ScrollBoxRenderable | undefined
+  let chatScroll: ScrollBoxRenderable | undefined
+  let notebookScroll: ScrollBoxRenderable | undefined
+  const scroll = () => (tab() === "chat" ? chatScroll : notebookScroll)
   let menuScroll: ScrollBoxRenderable | undefined
   let draft = ""
   const run = (work: Promise<unknown>) =>
@@ -89,7 +91,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   function focusEditor() {
     if (!props.api.ui.dialog.blocking) return
     if (composer() && target() && !target()!.isDestroyed) target()!.focus()
-    else if (scroll && !scroll.isDestroyed) scroll.focus()
+    else scroll()?.focus()
   }
   function openMenu(next: NonNullable<ReturnType<typeof menu>>) {
     if (menu() === next) {
@@ -222,10 +224,6 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
     if (editor() !== "question") back()
     setTab(next)
     closeMenu()
-    queueMicrotask(() => {
-      if (!scroll || scroll.isDestroyed) return
-      scroll.scrollTo(next === "notebook" ? 0 : scroll.scrollHeight)
-    })
     focusEditor()
   }
   function submit() {
@@ -302,7 +300,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
       return
     }
     if (editor() !== "steer") {
-      if (scroll && !scroll.isDestroyed) scroll.scrollBy(direction * 6)
+      scroll()?.scrollBy(direction * 6)
       return
     }
     const input = target()
@@ -748,123 +746,129 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
             </text>
           </box>
         </Show>
-        <Show
-          when={editor() !== "steer"}
-          fallback={
-            <box flexShrink={0} marginBottom={1}>
-              <text fg={theme().accent}>
-                <b>Send to coding agent</b>
-              </text>
-              <text id="learning-destination" fg={theme().text} wrapMode="word">
-                Destination: {source()?.title ?? "Coding session"}
-              </text>
-              <text fg={theme().textMuted} wrapMode="char">
-                Session: {props.sourceID}
-              </text>
-              <text fg={theme().textMuted}>Edit the exact instruction below. Sending requires your approval.</text>
-            </box>
-          }
+        <Show when={editor() === "steer"}>
+          <box flexShrink={0} marginBottom={1}>
+            <text fg={theme().accent}>
+              <b>Send to coding agent</b>
+            </text>
+            <text id="learning-destination" fg={theme().text} wrapMode="word">
+              Destination: {source()?.title ?? "Coding session"}
+            </text>
+            <text fg={theme().textMuted} wrapMode="char">
+              Session: {props.sourceID}
+            </text>
+            <text fg={theme().textMuted}>Edit the exact instruction below. Sending requires your approval.</text>
+          </box>
+        </Show>
+        {/* Keep Chat mounted so the preview and Notebook preserve its scroll position. */}
+        <scrollbox
+          id="learning-body"
+          ref={(value) => {
+            chatScroll = value
+          }}
+          visible={editor() !== "steer" && tab() === "chat"}
+          flexGrow={1}
+          flexShrink={1}
+          minHeight={1}
+          stickyScroll
+          stickyStart="bottom"
         >
+          <Show when={!record()?.turns.length && !record()?.busy}>
+            <box gap={1} maxWidth={72}>
+              <text fg={theme().accent}>
+                <b>Understand what you're building.</b>
+              </text>
+              <text fg={theme().textMuted}>
+                Ask about a completed change, test, or project concept. Coding can continue.
+              </text>
+              <For
+                each={[
+                  "Explain the last completed change.",
+                  "Help me understand the last test result.",
+                  "Suggest one small improvement.",
+                ]}
+              >
+                {(question, index) => (
+                  <Action
+                    id={`learning-starter-${index()}`}
+                    label={question}
+                    run={() => change("question", question)}
+                  />
+                )}
+              </For>
+            </box>
+          </Show>
+          <Show when={(record()?.turns.length ?? 0) > visible()}>
+            <box marginBottom={1}>
+              <Action
+                id="learning-history"
+                label={`Show earlier answers · ${(record()?.turns.length ?? 0) - visible()}`}
+                run={() => setVisible(Math.min(30, visible() + 10))}
+              />
+            </box>
+          </Show>
+          <For each={record()?.turns.slice(-visible())}>{(turn) => <Answer turn={turn} />}</For>
+          <Show when={record()?.busy}>
+            <box marginBottom={1} maxWidth={72} paddingLeft={1} backgroundColor={theme().backgroundElement}>
+              <text fg={theme().textMuted}>
+                <b>You</b>
+              </text>
+              <text fg={theme().text} wrapMode="word">
+                {record()?.pending?.label ?? "Follow-up question"}
+              </text>
+              <text fg={theme().warning}>● Thinking… You can keep coding.</text>
+            </box>
+          </Show>
+          <Show when={record()?.topic}>
+            <box marginBottom={1} maxWidth={72} paddingLeft={1} border={["top"]} borderColor={theme().borderSubtle}>
+              <text fg={theme().accent}>
+                <b>Learning topic</b>
+              </text>
+              <text wrapMode="word" fg={theme().text}>
+                {record()?.topic}
+              </text>
+              <box flexDirection="row" flexWrap="wrap" gap={1}>
+                <Action
+                  id="learning-topic"
+                  label="Explore topic"
+                  disabled={record()?.busy}
+                  run={() => {
+                    const topic = record()?.topic
+                    if (topic) {
+                      props.companion.dismiss(props.sourceID)
+                      change("question", topic)
+                    }
+                  }}
+                />
+                <Action id="learning-dismiss" label="Dismiss" run={() => props.companion.dismiss(props.sourceID)} />
+              </box>
+            </box>
+          </Show>
+        </scrollbox>
+        <Show when={editor() !== "steer" && tab() === "notebook"}>
           <scrollbox
-            id="learning-body"
+            id="learning-notebook-body"
             ref={(value) => {
-              scroll = value
+              notebookScroll = value
             }}
             flexGrow={1}
             flexShrink={1}
             minHeight={1}
-            stickyScroll={tab() === "chat"}
-            stickyStart="bottom"
           >
-            <Show
-              when={tab() === "chat"}
-              fallback={
-                <Notebook
-                  entries={record()?.entries ?? []}
-                  width={width()}
-                  theme={theme()}
-                  syntax={localTheme.syntax()}
-                  Action={Action}
-                  Evidence={Evidence}
-                  focusInput={focusEditor}
-                  actions={() => openMenu("entry")}
-                  ref={setNotebook}
-                />
-              }
-            >
-              <Show when={!record()?.turns.length && !record()?.busy}>
-                <box gap={1} maxWidth={72}>
-                  <text fg={theme().accent}>
-                    <b>Understand what you're building.</b>
-                  </text>
-                  <text fg={theme().textMuted}>
-                    Ask about a completed change, test, or project concept. Coding can continue.
-                  </text>
-                  <For
-                    each={[
-                      "Explain the last completed change.",
-                      "Help me understand the last test result.",
-                      "Suggest one small improvement.",
-                    ]}
-                  >
-                    {(question, index) => (
-                      <Action
-                        id={`learning-starter-${index()}`}
-                        label={question}
-                        run={() => change("question", question)}
-                      />
-                    )}
-                  </For>
-                </box>
-              </Show>
-              <Show when={(record()?.turns.length ?? 0) > visible()}>
-                <box marginBottom={1}>
-                  <Action
-                    id="learning-history"
-                    label={`Show earlier answers · ${(record()?.turns.length ?? 0) - visible()}`}
-                    run={() => setVisible(Math.min(30, visible() + 10))}
-                  />
-                </box>
-              </Show>
-              <For each={record()?.turns.slice(-visible())}>{(turn) => <Answer turn={turn} />}</For>
-              <Show when={record()?.busy}>
-                <box marginBottom={1} maxWidth={72} paddingLeft={1} backgroundColor={theme().backgroundElement}>
-                  <text fg={theme().textMuted}>
-                    <b>You</b>
-                  </text>
-                  <text fg={theme().text} wrapMode="word">
-                    {record()?.pending?.label ?? "Follow-up question"}
-                  </text>
-                  <text fg={theme().warning}>● Thinking… You can keep coding.</text>
-                </box>
-              </Show>
-              <Show when={record()?.topic}>
-                <box marginBottom={1} maxWidth={72} paddingLeft={1} border={["top"]} borderColor={theme().borderSubtle}>
-                  <text fg={theme().accent}>
-                    <b>Learning topic</b>
-                  </text>
-                  <text wrapMode="word" fg={theme().text}>
-                    {record()?.topic}
-                  </text>
-                  <box flexDirection="row" flexWrap="wrap" gap={1}>
-                    <Action
-                      id="learning-topic"
-                      label="Explore topic"
-                      disabled={record()?.busy}
-                      run={() => {
-                        const topic = record()?.topic
-                        if (topic) {
-                          props.companion.dismiss(props.sourceID)
-                          change("question", topic)
-                        }
-                      }}
-                    />
-                    <Action id="learning-dismiss" label="Dismiss" run={() => props.companion.dismiss(props.sourceID)} />
-                  </box>
-                </box>
-              </Show>
-            </Show>
+            <Notebook
+              entries={record()?.entries ?? []}
+              width={width()}
+              theme={theme()}
+              syntax={localTheme.syntax()}
+              Action={Action}
+              Evidence={Evidence}
+              focusInput={focusEditor}
+              actions={() => openMenu("entry")}
+              ref={setNotebook}
+            />
           </scrollbox>
+        </Show>
+        <Show when={editor() !== "steer"}>
           <Show when={tab() === "chat" && latest() && latest()!.version !== record()?.version}>
             <text fg={theme().warning} flexShrink={0}>
               Newer changes available · Actions → Update
