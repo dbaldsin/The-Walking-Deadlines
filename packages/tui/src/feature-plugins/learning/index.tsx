@@ -71,6 +71,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   let scroll: ScrollBoxRenderable | undefined
   let menuScroll: ScrollBoxRenderable | undefined
   let draft = ""
+  let previewScrollTop: number | undefined
   const run = (work: Promise<unknown>) =>
     void work.catch((error: unknown) =>
       props.api.ui.toast({ variant: "error", message: error instanceof Error ? error.message : String(error) }),
@@ -220,6 +221,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   }
   function switchTab(next: ReturnType<typeof tab>) {
     if (editor() !== "question") back()
+    previewScrollTop = undefined
     setTab(next)
     closeMenu()
     queueMicrotask(() => {
@@ -293,6 +295,7 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
   }
   function steer(turn = latest()) {
     if (blocked() || !turn?.reply.instruction) return
+    previewScrollTop = scroll?.scrollTop
     setProposal(turn.id ?? `${props.sourceID}:${turn.version}:${turn.question}`)
     change("steer", turn.reply.instruction)
   }
@@ -769,6 +772,15 @@ export function CompanionOverlay(props: { api: TuiPluginApi; companion: Companio
             id="learning-body"
             ref={(value) => {
               scroll = value
+            }}
+            onSizeChange={() => {
+              const body = scroll
+              // The preview unmounts Chat. Restore its offset after the new content has been measured.
+              queueMicrotask(() => {
+                if (tab() !== "chat" || !body || body.isDestroyed || previewScrollTop === undefined) return
+                body.scrollTo(previewScrollTop)
+                previewScrollTop = undefined
+              })
             }}
             flexGrow={1}
             flexShrink={1}
