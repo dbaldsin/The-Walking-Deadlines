@@ -27,7 +27,7 @@ The recap also uses Dion's schema (#7, see [below](#shared-learning-recap-schema
 ### What the recap shows
 
 - **Files changed:** every file the task added, modified, or deleted, with line counts.
-- **Tests:** every test command that ran, whether it passed, failed, or didn't finish, a short summary, and, for failed runs, the names of the failing tests.
+- **Tests:** every test command that ran, whether it passed, failed, or didn't finish, a short summary (including the skip count when the runner reports one), and, for failed runs, the names of the failing tests. With two or more runs, the section starts with the last run's result, e.g. `Final: passed (after 2 runs)`, followed by every run in order. Tests run through `docker run`, `docker exec` or `docker compose run/exec` are recorded like the command inside the container. A chain like `npm run lint && npm test` that fails with no test totals or failing names in its output is shown as not-run, because the tests most likely never started.
 
 If a category is empty, it says so ("No files were changed during this task." / "No tests were run during this task."). A recap covers the whole task, including work done before a message you sent while opencode was busy.
 
@@ -117,7 +117,7 @@ Names are read from the failure lines each runner prints:
 - Each failing test is listed once, even if the runner prints it twice.
 - At most five names are shown; the rest are summarized as "…and N more".
 - Passed and not-run results never list names.
-- If no names can be found (for example from `make test`), the entry shows only the summary line.
+- If no names can be found (for example from `make test`), the entry shows the summary line followed by "Failing tests could not be identified."
 
 **How to try it:**
 
@@ -147,6 +147,7 @@ bun test test/session/prompt.test.ts -t "learning recap"
 | Test file | What it covers |
 | --- | --- |
 | `test/session/learning-recap-tests.test.ts` | **#9, #35, #36.** Test-command detection for every runner, wrapper, and build-tool form above, plus commands that must not count (including the Gradle exclusions). Passed/failed/not-run status, summaries (including Maven/dotnet totals), truncation, and the "no tests" message. Failing-name parsing using real bun and cargo output plus jest, vitest, pytest, and go output, with de-duplication, the five-name limit, the fallbacks, and schema validity. |
+| `test/session/learning-recap-tests.property.test.ts` | **P4B.** fast-check properties for requirements R1–R7 in [`traceability/sangyoon.md`](traceability/sangyoon.md): not-run status, `&&` chains that stop before the tests, failing-name order and limit, the "could not be identified" message, skip counts, docker-wrapped commands, and the final-result line. |
 | `test/session/learning-recap-render.test.ts` | **#11, #35.** Building the recap from a task's tool calls and file changes, rendering the markdown (including the empty cases and nested failing names), and returning nothing when the task did nothing. |
 | `test/session/prompt.test.ts` (`learning recap`) | **#11, end to end.** Real edits and passing/failing test runs across several provider turns and busy steering. Exactly one recap on the final response; none after provider errors, permission denials, or cancellation, or on later read-only tasks. |
 | `test/session/learning-recap.test.ts` | The shared schema (Dion, #7). The optional failing-names field added for #35 is checked against it in `learning-recap-tests.test.ts`. |
