@@ -45,20 +45,24 @@ test("R1 · only approval sends the exact text and destination once", async () =
 }, 60_000)
 
 // R2: Back must restore the Chat draft and position and leave the coding conversation unchanged.
-// Kind: round-trip. Several turns and an interior scroll offset distinguish restoration from jumping to either end.
-test("R2 · opening a preview and going Back restores the Chat draft and scroll position", async () => {
+// Kind: round-trip. Exercise several preview exits and offsets, including one row above the newest reply.
+test("R2 · leaving the preview preserves the Chat draft and scroll position", async () => {
   await fc.assert(
     fc.asyncProperty(
       wideWidth,
       text,
       fc.integer({ min: 3, max: 9 }),
-      fc.integer({ min: 1, max: 4 }),
-      async (width, draft, count, offset) => {
+      fc.oneof(fc.constantFrom(0, 100), fc.integer({ min: 1, max: 99 })),
+      fc.constantFrom("back", "chat", "notebook", "note", "goal"),
+      async (width, draft, count, position, exit) => {
         await using tmp = await tmpdir()
         const turns = Array.from({ length: count }, (_, index) => learningTurn(index))
         await using view = await learningView(tmp.path, width, 24, { turns })
         view.input().setText(draft)
         const body = view.find("learning-body") as ScrollBoxRenderable
+        const maxScrollTop = body.scrollHeight - body.viewport.height
+        expect(maxScrollTop).toBeGreaterThan(1)
+        const offset = Math.floor(((maxScrollTop - 1) * position) / 100)
         body.scrollTo(offset)
         await view.flush()
         expect(body.scrollTop).toBe(offset)
@@ -67,13 +71,27 @@ test("R2 · opening a preview and going Back restores the Chat draft and scroll 
         view.app.mockInput.pressKey("g", { ctrl: true })
         await view.flush()
         expect(view.find("learning-destination")).toBeDefined()
+        expect(body.visible).toBe(false)
         view.input().setText("Do something else")
-        view.find("learning-back")!.focus()
-        view.app.mockInput.pressEnter()
-        await view.flush()
+        if (exit === "back") await view.click("learning-back")
+        if (exit === "notebook") {
+          await view.click("learning-notebook")
+          expect(view.find("learning-notebook-body")).toBeDefined()
+        }
+        if (exit === "note" || exit === "goal") {
+          view.app.mockInput.pressKey(exit === "note" ? "n" : "g", { meta: true })
+          await view.flush()
+          expect(view.find("learning-notebook-body")).toBeDefined()
+          expect(view.input().plainText).toBe("")
+        }
+        if (exit !== "back") await view.click("learning-chat")
 
+        await view.flush()
+        expect(view.find("learning-destination")).toBeUndefined()
+        expect(body.visible).toBe(true)
+        expect(view.find("learning-body")).toBe(body)
         expect(view.input().plainText).toBe(draft)
-        expect((view.find("learning-body") as ScrollBoxRenderable).scrollTop).toBe(offset)
+        expect(body.scrollTop).toBe(offset)
         expect(view.records.source.turns).toEqual(turns)
         expect(view.main().plainText).toBe("unsent coding draft")
         expect(view.app.captureCharFrame()).toContain("CODING TASK STARTED")
@@ -81,7 +99,15 @@ test("R2 · opening a preview and going Back restores the Chat draft and scroll 
         expect(view.sent).toEqual([])
       },
     ),
-    renderRuns,
+    {
+      ...renderRuns,
+      examples: [
+        [128, "unsent question", 3, 100, "back"],
+        [128, "unsent question", 3, 100, "chat"],
+        [128, "unsent question", 3, 100, "note"],
+        [128, "unsent question", 3, 100, "goal"],
+      ],
+    },
   )
 }, 60_000)
 
