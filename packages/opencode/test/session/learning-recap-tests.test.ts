@@ -237,7 +237,11 @@ describe("collect and format", () => {
   })
 
   test("lists each command with its status", () => {
-    expect(format(collect(calls))).toEqual(["bun test: failed (1 fail)", "bun test: passed (5 pass)"])
+    expect(format(collect(calls))).toEqual([
+      "Final: passed (after 2 runs)",
+      "bun test: failed (1 fail)\n  - Failing tests could not be identified.",
+      "bun test: passed (5 pass)",
+    ])
   })
 
   test("shows a clear message when no tests were run", () => {
