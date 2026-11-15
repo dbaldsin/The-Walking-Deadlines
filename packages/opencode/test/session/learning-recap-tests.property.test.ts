@@ -22,6 +22,7 @@ const runner = fc.constantFrom(
   "go test ./...",
   "cargo test",
   "mvn clean test",
+  "node --test",
 )
 
 // Prefixes that launch the runner without changing what it reports (wrappers and env assignments).
@@ -29,7 +30,20 @@ const launcher = fc.constantFrom("", "timeout 60 ", "CI=1 ", "FORCE_COLOR=0 CI=1
 const testCommand = fc.tuple(launcher, runner).map(([prefix, command]) => prefix + command)
 
 // Steps an agent chains before the tests. None of them is a test run on its own.
-const setupStep = fc.constantFrom("npm run lint", "cd app", "tsc --noEmit", "make build", "bun install", "ruff check .")
+// The quoted "lint; done" checks that a ";" inside quotes is not read as a separator.
+const setupStep = fc.constantFrom(
+  "npm run lint",
+  "cd app",
+  "tsc --noEmit",
+  "make build",
+  "bun install",
+  "ruff check .",
+  "true",
+  "printf hello",
+  'echo "lint; done"',
+)
+// Ways to end one command list and start another, so the runner no longer depends on the steps before it.
+const listSeparator = fc.constantFrom("; ", ";", "\n", " & ")
 
 // Output from a step that stopped before any test ran: lint, type-check, install and module errors. None of
 // these lines contains test totals or a failing test name, which is exactly the case R2 and R4 are about.
@@ -79,24 +93,47 @@ describe("R1: a run that never finished is not-run, never passed", () => {
 })
 
 describe("R2: tests that a failed earlier step prevented are not-run", () => {
-  // R2 (revised): When a test command follows one or more non-test steps in an && chain, the run fails, and
-  // its output contains no test totals and no failing test names, the run is recorded as not-run, not failed.
-  // When the output does show test totals or failing names, it is recorded as failed.
+  // R2 (revised): When a test command is joined by && to a non-test step right before it in the same command list
+  // (not separated by ;, & or a newline), the run fails, and its output contains no test totals and no failing
+  // test names, the run is recorded as not-run, not failed. When the output does show test totals or failing
+  // names, it is recorded as failed.
   // Kind: invariant.
-  // Generators: one to three setup steps before the runner; output either from a step that stopped early
-  // (lint, tsc, missing module) or containing real test evidence, the two cases in R2's acceptance criteria.
+  // Generators: one to three setup steps before the runner, sometimes after an unrelated earlier list
+  // ("cd app; ..."); output either from a step that stopped early (lint, tsc, missing module) or containing
+  // real test evidence, the two cases in R2's acceptance criteria.
   test("R2: a failed && chain with no test evidence is not-run; with test evidence it is failed", () => {
     fc.assert(
       fc.property(
+        fc.constantFrom("", "cd app; ", "export CI=1\n"),
         fc.array(setupStep, { minLength: 1, maxLength: 3 }),
         testCommand,
         failingExit,
         noTestOutput,
         testEvidence,
-        (steps, tests, exit, early, evidence) => {
-          const command = [...steps, tests].join(" && ")
+        (before, steps, tests, exit, early, evidence) => {
+          const command = before + [...steps, tests].join(" && ")
           expect(fromShell({ command, exit, output: early })?.status).toBe("not-run")
           expect(fromShell({ command, exit, output: `${early}\n${evidence}` })?.status).toBe("failed")
+        },
+      ),
+      options,
+    )
+  })
+
+  // Kind: invariant. When ";", "&" or a newline separates the runner from the && chain, the runner starts no matter
+  // how the chain ended, so a failure with no test evidence is the runner's own failure.
+  // Generators: the separators that end a list, after chains like "true && printf hello" from the PR review.
+  test("R2: a runner in a separate list after the && chain still fails when its output has no test evidence", () => {
+    fc.assert(
+      fc.property(
+        fc.array(setupStep, { minLength: 1, maxLength: 3 }),
+        listSeparator,
+        testCommand,
+        failingExit,
+        noTestOutput,
+        (steps, separator, tests, exit, output) => {
+          const command = steps.join(" && ") + separator + tests
+          expect(fromShell({ command, exit, output })?.status).toBe("failed")
         },
       ),
       options,
@@ -284,9 +321,13 @@ describe("R5: skipped tests are reported but do not change the status", () => {
 })
 
 // docker's own options before the image, container or service, in every form R6 covers: boolean flags,
-// combined short flags, "--flag=value", and value flags written as two words ("-e CI=1", "-w /app").
+// combined short flags, "--flag=value", and value flags written as two words ("-e CI=1", "-w /app"). Some
+// values are quoted and contain spaces or ";", which must stay inside one argument.
 const dockerOption = fc.constantFrom(
   "--rm",
+  '-e "TEST_LABEL=ci smoke"',
+  "--env='GREETING=hello world'",
+  '-l "team=walking deadlines; ci"',
   "-it",
   "-T",
   "-d",
@@ -302,7 +343,7 @@ const dockerOption = fc.constantFrom(
 )
 // Image and service names, including ones that look like runners ("jest", "test") to make sure the name
 // is never mistaken for the command.
-const target = fc.constantFrom("app", "web", "node:20", "python:3.12-slim", "jest", "test")
+const target = fc.constantFrom("app", "web", "node:20", "oven/bun", "python:3.12-slim", "jest", "test")
 const dockerOptions = fc
   .array(dockerOption, { maxLength: 3 })
   .map((list) => list.map((option) => `${option} `).join(""))
@@ -327,10 +368,11 @@ const containerCommand = fc
   .map(([prefix, command]) => prefix + command)
 
 describe("R6: tests run inside docker are recorded like the inner command", () => {
-  // R6 (revised): Test commands run with docker run, docker exec, docker compose run/exec or docker-compose run
-  // are recognized as test runs when docker's own options are boolean flags, "--flag=value", or one of the
-  // common value flags (-e, -v, -w, -u, -p, --name, --network, --env, --volume, --workdir, --user, -f/--file).
-  // Their result is the same as running the inner command directly with the same exit code and output.
+  // R6 (revised): Test commands run with docker run, docker exec, docker compose run/exec or docker-compose
+  // run/exec are recognized as test runs when docker's own options are flags, "--flag=value", or one of the
+  // common value options written as two words (quoted values allowed). Their result is the same as running the
+  // inner command directly with the same exit code and output. With an explicit --entrypoint, the command is
+  // the entrypoint followed by the words after the image.
   // Kind: metamorphic. Input change: wrap the command in docker. Expected output change: only the
   // recorded command text changes; status, summary and failing names are identical.
   test("R6: wrapping a test command in docker changes only the recorded command", () => {
@@ -344,6 +386,33 @@ describe("R6: tests run inside docker are recorded like the inner command", () =
           const direct = fromShell({ command: inner, exit, output: out })
           const docker = fromShell({ command: prefix + inner, exit, output: out })
           expect(docker).toEqual({ ...direct!, command: prefix + inner })
+        },
+      ),
+      options,
+    )
+  })
+
+  // Kind: model/oracle. The oracle is docker's documented rule: an explicit --entrypoint runs with the words after
+  // the image as its arguments, and --entrypoint "" falls back to the image's own (so the words run as written).
+  // Generators: entrypoints that are runners ("bun", "pytest"), wrappers ("npx") or not ("echo", "sh"), with
+  // arguments that only form a test command for some of them, e.g. "--entrypoint echo oven/bun bun test"
+  // (runs echo, not a test) and "--entrypoint bun oven/bun test" (runs bun test) from the PR review.
+  test("R6: with --entrypoint, the recorded result is that of the entrypoint run with the remaining words", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom("docker run", "docker compose run", "docker-compose run"),
+        dockerOptions,
+        fc.constantFrom("echo", "sh", "bun", "pytest", "npx", '""', "''"),
+        fc.boolean(),
+        target,
+        fc.constantFrom("", "test", "bun test", "jest", "-q", "--version"),
+        fc.constantFrom(0, 1, null),
+        anyOutput,
+        (docker, opts, entrypoint, equals, image, args, exit, out) => {
+          const command = `${docker} ${opts}--entrypoint${equals ? "=" : " "}${entrypoint} ${image} ${args}`.trim()
+          const runs = [entrypoint.replace(/^(['"])\1$/, ""), args].filter(Boolean).join(" ")
+          const direct = fromShell({ command: runs, exit, output: out })
+          expect(fromShell({ command, exit, output: out })).toEqual(direct && { ...direct, command })
         },
       ),
       options,

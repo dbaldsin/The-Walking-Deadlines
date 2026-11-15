@@ -44,6 +44,10 @@ const DOCKER_VALUE_OPTIONS = new Set([
   "--file",
 ])
 
+// Shell operators between commands: "&&" and "||" join an and-or list, "|" a pipeline, and ";", "&" and newlines
+// end a list. Sticky, because splitOutsideQuotes tries it at one position at a time.
+const OPERATOR = /&&|\|\||[;&|\n]/y
+
 // Lines that usually carry the runner's own totals, e.g. "4 pass", "Tests: 1 failed", "2 passed, 1 failed",
 // or label-first totals from JUnit/Maven and dotnet, e.g. "Tests run: 3, Failures: 1", "Failed: 1, Passed: 3".
 const TOTALS = [
@@ -90,29 +94,80 @@ function skipDockerOptions(words: string[], index: number) {
  * The command docker runs inside a container for "docker run|exec", "docker compose run|exec" and
  * "docker-compose run|exec", e.g. "npm test" for "docker compose -f ci.yml run --rm -e CI=1 app npm test".
  * The first word after docker's options is the image, container or service, and the rest is the command.
+ * An explicit --entrypoint is the program that actually runs, with that rest as its arguments
+ * ("--entrypoint bun oven/bun test" runs "bun test"; "--entrypoint echo oven/bun bun test" runs "echo bun test").
  * Undefined for other docker commands ("docker build .", "docker compose up") or when no command is given.
  */
 function dockerInner(part: string) {
-  const words = part.split(/\s+/)
+  const words = splitOutsideQuotes(part, /\s+/y).parts.filter(Boolean)
   const compose = words[0] === "docker-compose" ? 1 : words[0] === "docker" && words[1] === "compose" ? 2 : 0
   if (!compose && words[0] !== "docker") return
   const sub = compose ? skipDockerOptions(words, compose) : 1
   if (words[sub] !== "run" && words[sub] !== "exec") return
-  const inner = words.slice(skipDockerOptions(words, sub + 1) + 1).join(" ")
+  const target = skipDockerOptions(words, sub + 1)
+  const inner = [dockerEntrypoint(words.slice(sub + 1, target)), ...words.slice(target + 1)].filter(Boolean).join(" ")
   return inner || undefined
 }
 
-/** True when the test command comes after another step in an && chain, e.g. "npm run lint && npm test". */
+/** The program given with --entrypoint among docker's options, without quotes. "" or no option means the image's own. */
+function dockerEntrypoint(options: string[]) {
+  return options
+    .flatMap((word, index) => {
+      if (word.startsWith("--entrypoint=")) return [word.slice("--entrypoint=".length)]
+      return word === "--entrypoint" ? options.slice(index + 1, index + 2) : []
+    })
+    .at(-1)
+    ?.replace(/^(['"])(.*)\1$/, "$2")
+}
+
+/**
+ * True when the last test command is joined by && to a non-test step right before it in the same list, e.g.
+ * "npm run lint && npm test". ";", "&" and newlines start a new list, so in "true && printf hi; node --test" the
+ * runner does not depend on the earlier steps.
+ */
 function afterOtherSteps(command: string) {
-  return command.split("&&").findIndex(isTestCommand) > 0
+  const list = splitOutsideQuotes(command, OPERATOR)
+  const last = list.parts.findLastIndex(runsTests)
+  return last > 0 && list.separators[last - 1] === "&&" && !runsTests(list.parts[last - 1])
 }
 
 export function isTestCommand(command: string) {
-  return command
-    .split(/&&|\|\||;|\|/)
-    .map((part) => part.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, ""))
-    .flatMap(unwrap)
-    .some((part) => RUNNERS.some((runner) => runner.test(part)) || gradleRunsTests(part))
+  return splitOutsideQuotes(command, OPERATOR).parts.some(runsTests)
+}
+
+/** Whether one simple command (no shell operators) runs tests, directly or through wrappers. */
+function runsTests(part: string) {
+  return unwrap(part.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "")).some(
+    (command) => RUNNERS.some((runner) => runner.test(command)) || gradleRunsTests(command),
+  )
+}
+
+/**
+ * Splits text wherever the sticky separator matches outside single or double quotes, so that
+ * "-e 'LABEL=ci smoke'" stays one word and "echo 'a; b' && npm test" has one operator. A backslash outside
+ * single quotes escapes the next character.
+ */
+function splitOutsideQuotes(text: string, separator: RegExp) {
+  const parts = [""]
+  const separators: string[] = []
+  let quote = ""
+  let index = 0
+  while (index < text.length) {
+    separator.lastIndex = index
+    const match = quote ? null : separator.exec(text)
+    if (match) {
+      separators.push(match[0])
+      parts.push("")
+      index += match[0].length
+      continue
+    }
+    const char = text[index]
+    quote = char === quote ? "" : !quote && (char === "'" || char === '"') ? char : quote
+    const length = char === "\\" && quote !== "'" ? 2 : 1
+    parts[parts.length - 1] += text.slice(index, index + length)
+    index += length
+  }
+  return { parts, separators }
 }
 
 /**
