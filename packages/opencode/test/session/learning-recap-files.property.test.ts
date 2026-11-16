@@ -59,7 +59,7 @@ describe("changed-file recap properties", () => {
           { file, additions: 0, deletions: change.deletions },
         ]) {
           expect(collect([edit])[0]?.status).toBeUndefined()
-          expect(format(collect([edit]))).toEqual([`${file} (+${edit.additions}/-${edit.deletions})`])
+          expect(format(collect([edit])).slice(1)).toEqual([`${file} (+${edit.additions}/-${edit.deletions})`])
         }
       }),
       options,
@@ -71,15 +71,21 @@ describe("changed-file recap properties", () => {
       fc.property(diffs, (input) => {
         const before = structuredClone(input)
         const selected = collect(input)
-        const lines = format(selected)
+        const output = format(selected)
+        // With files listed, the first line is the summary line and the files are grouped by status
+        // (R6 and R7 in traceability/snaimi.md), so compare the file lines without their order.
+        const lines = selected.length ? output.slice(1) : output
         expect(lines).toHaveLength(selected.length || 1)
-        selected.forEach((entry, index) => {
-          expect(lines[index]).toBe(
-            entry.status
-              ? `${entry.file} (${entry.status}, +${entry.additions}/-${entry.deletions})`
-              : `${entry.file} (+${entry.additions}/-${entry.deletions})`,
+        if (selected.length)
+          expect(lines.toSorted()).toEqual(
+            selected
+              .map((entry) =>
+                entry.status
+                  ? `${entry.file} (${entry.status}, +${entry.additions}/-${entry.deletions})`
+                  : `${entry.file} (+${entry.additions}/-${entry.deletions})`,
+              )
+              .toSorted(),
           )
-        })
         expect(input).toEqual(before)
       }),
       options,

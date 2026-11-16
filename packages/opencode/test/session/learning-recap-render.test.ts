@@ -90,7 +90,7 @@ describe("LearningRecapRender.render", () => {
       tests: [{ command: "bun test", status: "passed" }],
     })
     expect(text).toBe(
-      "## Learning Recap\n\n### Files changed\n- src/foo.ts (modified, +4/-1)\n\n### Tests\n- bun test: passed",
+      "## Learning Recap\n\n### Files changed\n1 file changed: 0 added, 1 modified, 0 deleted\n- src/foo.ts (modified, +4/-1)\n\n### Tests\n- bun test: passed",
     )
   })
 
