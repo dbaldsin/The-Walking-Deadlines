@@ -44,42 +44,41 @@ function byPath(a: string | undefined, b: string | undefined) {
 
 /**
  * One row per file. The task diff runs git without rename detection, so a moved file arrives
- * as a deletion and an addition. Each deleted text file (in path order) is paired with the
- * added text file that keeps the most of its lines, as long as at least half of the lines of
- * the larger file are unchanged (git's default 50% rename threshold, counted in lines). Files
- * whose content isn't in the diff (binary files, older diffs) are never paired.
+ * as a deletion and an addition. Deleted and added text files are paired as renames when at
+ * least half of the lines of the larger file are unchanged (git's default 50% rename threshold,
+ * counted in lines). The most similar pairs are taken first, so exact moves are always matched
+ * before edited ones, and ties go to the earlier paths. Files whose content can't be read from
+ * the diff (binary files, older diffs, unreadable patches) are never paired.
  */
 function rows(files: ReadonlyArray<FileDiff.Info>) {
-  const added = files
-    .filter((file) => file.status === "added")
-    .sort((a, b) => byPath(a.file, b.file))
-    .flatMap((file) => {
-      const text = content(file)
-      return text === undefined ? [] : [{ file, text }]
-    })
+  const readable = (status: "added" | "deleted") =>
+    files
+      .filter((file) => file.status === status)
+      .sort((a, b) => byPath(a.file, b.file))
+      .flatMap((file) => {
+        const text = content(file)
+        return text === undefined ? [] : [{ file, text }]
+      })
+  const added = readable("added")
+  const candidates = readable("deleted")
+    .flatMap((from, i) =>
+      added.map((to, j) => ({ from: from.file, to: to.file, order: [i, j], ...compare(from.text, to.text) })),
+    )
+    .filter((pair) => pair.similarity >= 0.5)
+    .sort((a, b) => b.similarity - a.similarity || a.order[0] - b.order[0] || a.order[1] - b.order[1])
   const paired = new Set<FileDiff.Info>()
-  const renames = files
-    .filter((file) => file.status === "deleted")
-    .sort((a, b) => byPath(a.file, b.file))
-    .flatMap((from): Row[] => {
-      const before = content(from)
-      if (before === undefined) return []
-      const best = added
-        .filter((candidate) => !paired.has(candidate.file))
-        .map((candidate) => ({ to: candidate.file, ...compare(before, candidate.text) }))
-        .filter((candidate) => candidate.similarity >= 0.5)
-        .toSorted((a, b) => b.similarity - a.similarity)[0]
-      if (!best) return []
-      paired.add(from)
-      paired.add(best.to)
-      return [
-        {
-          path: best.to.file ?? "",
-          status: "renamed",
-          text: `${from.file} renamed to ${best.to.file} (renamed, +${best.additions}/-${best.deletions})`,
-        },
-      ]
-    })
+  const renames = candidates.flatMap((pair): Row[] => {
+    if (paired.has(pair.from) || paired.has(pair.to)) return []
+    paired.add(pair.from)
+    paired.add(pair.to)
+    return [
+      {
+        path: pair.to.file ?? "",
+        status: "renamed",
+        text: `${pair.from.file} renamed to ${pair.to.file} (renamed, +${pair.additions}/-${pair.deletions})`,
+      },
+    ]
+  })
   const others = files
     .filter((file) => !paired.has(file))
     .map((file): Row => {
@@ -95,18 +94,29 @@ function rows(files: ReadonlyArray<FileDiff.Info>) {
 
 /**
  * The text an added file was created with, or a deleted file had, rebuilt from its patch.
- * Undefined when the patch can't show it: binary files and older diffs have no patch.
+ * Undefined when the patch can't show it: binary files and older diffs have no patch, and a
+ * path with a newline in it makes the patch header unreadable. An unreadable patch only means
+ * the file can't be matched as a rename; it is still listed as added or deleted.
  */
 function content(diff: FileDiff.Info) {
   if (!diff.patch) return undefined
-  const parsed = parsePatch(diff.patch)
-  if (parsed.length !== 1) return undefined
+  const parsed = readPatch(diff.patch)
+  if (parsed?.length !== 1) return undefined
   const sign = diff.status === "added" ? "+" : "-"
   const lines = parsed[0].hunks.flatMap((hunk) => hunk.lines)
   if (lines.some((line) => !line.startsWith(sign) && !line.startsWith("\\"))) return undefined
   const body = lines.filter((line) => !line.startsWith("\\")).map((line) => line.slice(1))
   if (body.length === 0) return ""
   return body.join("\n") + (lines.at(-1)?.startsWith("\\") ? "" : "\n")
+}
+
+/** parsePatch throws on patches it can't read; for the recap that just means "no content". */
+function readPatch(patch: string) {
+  try {
+    return parsePatch(patch)
+  } catch {
+    return undefined
+  }
 }
 
 /** Line counts between two texts, and the share of the larger text's lines left unchanged. */
