@@ -70,6 +70,13 @@ jobs:
         # vCPUs across 5 packages' test tasks running at once — see typecheck.
         run: GITHUB_ACTIONS=false bun turbo test --concurrency=4
 
+      # The opencode test script uses --only-failures, so passing tests don't show in the log above.
+      # This step runs the changed-files recap properties on their own so each one is listed.
+      - name: Run changed-files recap properties
+        timeout-minutes: 10
+        working-directory: packages/opencode
+        run: bun test test/session/learning-recap-changed-files.property.test.ts
+
       - name: Check generated client
         timeout-minutes: 5
         working-directory: packages/client
