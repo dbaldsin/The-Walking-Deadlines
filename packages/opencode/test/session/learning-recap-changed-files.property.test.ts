@@ -84,8 +84,25 @@ function textDiff(
 
 // One diff entry as the recap can receive it: a text file with a real patch and any status, a binary
 // file (Snapshot.diffFull stores an empty patch and zero counts), an entry with no status (saved before
-// statuses existed) or an entry with no path.
+// statuses existed), an entry with no path, or an added or deleted file whose patch the recap cannot
+// read back: a path with a newline in it (git allows that, and the patch header then spans two lines)
+// or a stored patch that is not a valid patch at all.
 const anyDiff: fc.Arbitrary<FileDiff.Info> = fc.oneof(
+  {
+    weight: 1,
+    arbitrary: fc
+      .tuple(
+        fc.constantFrom("notes\n2026.txt", "a\nb/c.ts"),
+        fc.constantFrom("added" as const, "deleted" as const),
+        content,
+        fc.string({ maxLength: 40 }),
+        fc.boolean(),
+      )
+      .map(([file, status, text, garbage, valid]) => {
+        const diff = textDiff(file, status, status === "added" ? "" : text, status === "added" ? text : "")
+        return valid ? diff : { ...diff, patch: "@@ " + garbage }
+      }),
+  },
   {
     weight: 6,
     arbitrary: fc
@@ -144,7 +161,7 @@ const SUMMARY = /^\d+ files? changed: /
 function parse(lines: string[]) {
   const summary = lines.length > 0 && SUMMARY.test(lines[0]) ? lines[0] : undefined
   const entries: Entry[] = (summary ? lines.slice(1) : lines).map((text) => {
-    const rename = text.match(/^(.+) renamed to (.+) \(renamed, \+(\d+)\/-(\d+)\)$/)
+    const rename = text.match(/^(.+) renamed to (.+) \(renamed, \+(\d+)\/-(\d+)\)$/s)
     if (rename)
       return {
         paths: [rename[1], rename[2]],
@@ -153,7 +170,7 @@ function parse(lines: string[]) {
         deletions: +rename[4],
         line: text,
       }
-    const withStatus = text.match(/^(.+) \((added|deleted|modified), \+(\d+)\/-(\d+)\)$/)
+    const withStatus = text.match(/^(.+) \((added|deleted|modified), \+(\d+)\/-(\d+)\)$/s)
     if (withStatus)
       return {
         paths: [withStatus[1]],
@@ -162,7 +179,7 @@ function parse(lines: string[]) {
         deletions: +withStatus[4],
         line: text,
       }
-    const noStatus = text.match(/^(.+) \(\+(\d+)\/-(\d+)\)$/)
+    const noStatus = text.match(/^(.+) \(\+(\d+)\/-(\d+)\)$/s)
     if (noStatus)
       return { paths: [noStatus[1]], status: undefined, additions: +noStatus[2], deletions: +noStatus[3], line: text }
     return { paths: [], status: "unparsed", additions: 0, deletions: 0, line: text }
@@ -777,6 +794,83 @@ describe("Learning Recap changed files: requirement properties", () => {
           const counts = lineCounts(oldText, newText)
           expect(mine).toHaveLength(1)
           expect(mine[0].line).toBe(`${from} renamed to ${to} (renamed, +${counts.additions}/-${counts.deletions})`)
+        }),
+        { numRuns: REPO_RUNS },
+      )
+    },
+    REPO_TIMEOUT,
+  )
+
+  // R8 (revised in P4B): A deleted text file and an added text file are shown as one entry, "old
+  // renamed to new (renamed, +A/-D)", when at least half of the lines of the larger of the two files are
+  // unchanged between them (git's default 50% rename threshold, counted in lines). The line counts are
+  // always shown, and are +0/-0 for a file that was only moved. A move whose content can't be compared
+  // (a binary file) is still shown as one deleted file and one added file, with both paths correct.
+  // This property checks two moves in the same task.
+  // Kind: invariant
+  //
+  // Generator: two files that share a block of lines, each with a few lines of its own (found in a
+  // teammate's review of this PR). In one task both are moved to new paths; one is moved unchanged and
+  // the other is moved and edited, keeping at least half of its lines. Which one sorts first, how many
+  // lines they share and how much the edited one changes are all generated, so the edited file is often
+  // more similar to the other file's new copy than to its own. Each file must still be paired with its
+  // own new path, with the right counts.
+  test(
+    "R8: two files moved in the same task are each paired with their own new path",
+    async () => {
+      const scenario = fc.record({
+        shared: fc.integer({ min: 2, max: 6 }),
+        ownA: fc.integer({ min: 1, max: 3 }),
+        ownB: fc.integer({ min: 1, max: 3 }),
+        dropped: fc.nat({ max: 6 }),
+        added: fc.nat({ max: 6 }),
+        editedFirst: fc.boolean(),
+      })
+      await fc.assert(
+        fc.asyncProperty(scenario, async (input) => {
+          const shared = Array.from({ length: input.shared }, (_, i) => `shared line ${i}\n`)
+          const a = [...shared, ...Array.from({ length: input.ownA }, (_, i) => `only in a ${i}\n`)]
+          const b = [...shared, ...Array.from({ length: input.ownB }, (_, i) => `only in b ${i}\n`)]
+          // The edited file drops some of its first lines and gains new ones, keeping at least half.
+          const kept = a.slice(Math.min(input.dropped, Math.floor(a.length / 2)))
+          const extra = Array.from({ length: Math.min(input.added, kept.length) }, (_, i) => `new in a ${i}\n`)
+          const editedText = [...kept, ...extra].join("")
+          const [edited, moved] = input.editedFirst
+            ? [
+                { from: "lib/a.ts", to: "src/a2.ts" },
+                { from: "lib/b.ts", to: "src/b2.ts" },
+              ]
+            : [
+                { from: "lib/b.ts", to: "src/b2.ts" },
+                { from: "lib/a.ts", to: "src/a2.ts" },
+              ]
+          const { lines } = await runTask({
+            setup: writeAll(
+              new Map([
+                [edited.from, a.join("")],
+                [moved.from, b.join("")],
+              ]),
+            ),
+            steps: [
+              async (dir) => {
+                await removeFile(dir, edited.from)
+                await removeFile(dir, moved.from)
+                await writeFile(dir, edited.to, editedText)
+                await writeFile(dir, moved.to, b.join(""))
+              },
+            ],
+          })
+          const counts = lineCounts(a.join(""), editedText)
+          expect(
+            parse(lines)
+              .entries.map((entry) => entry.line)
+              .toSorted(),
+          ).toEqual(
+            [
+              `${edited.from} renamed to ${edited.to} (renamed, +${counts.additions}/-${counts.deletions})`,
+              `${moved.from} renamed to ${moved.to} (renamed, +0/-0)`,
+            ].toSorted(),
+          )
         }),
         { numRuns: REPO_RUNS },
       )

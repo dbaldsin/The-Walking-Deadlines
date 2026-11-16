@@ -1,3 +1,4 @@
+import { formatPatch, structuredPatch } from "diff"
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { LearningRecap } from "@/session/learning-recap"
@@ -183,6 +184,46 @@ describe("format", () => {
     expect(format(collect(different)).slice(1)).toEqual(["new.ts (added, +1/-0)", "old.ts (deleted, +0/-1)"])
     const binary = different.map((file) => ({ ...file, patch: "", additions: 0, deletions: 0 }))
     expect(format(collect(binary)).slice(1)).toEqual(["new.ts (added, +0/-0)", "old.ts (deleted, +0/-0)"])
+  })
+
+  test("matches exact moves before edited ones when two files move in one task (review on PR #53)", () => {
+    const patch = (file: string, before: string, after: string) =>
+      formatPatch(structuredPatch(file, file, before, after, "", "", { context: Number.MAX_SAFE_INTEGER }))
+    const a = Array.from({ length: 8 }, (_, i) => `base-line-${i}\n`).join("")
+    const b = [...Array.from({ length: 6 }, (_, i) => `base-line-${i}\n`), "file-b-ln-6\n", "file-b-ln-7\n"].join("")
+    const aNew = [...Array.from({ length: 5 }, (_, i) => `base-line-${i + 3}\n`), "new-1\n", "new-2\n", "new-3\n"].join(
+      "",
+    )
+    const task = [
+      { file: "a-old", patch: patch("a-old", a, ""), additions: 0, deletions: 8, status: "deleted" as const },
+      { file: "b-old", patch: patch("b-old", b, ""), additions: 0, deletions: 8, status: "deleted" as const },
+      { file: "a-new", patch: patch("a-new", "", aNew), additions: 8, deletions: 0, status: "added" as const },
+      { file: "b-new", patch: patch("b-new", "", b), additions: 8, deletions: 0, status: "added" as const },
+    ]
+    expect(format(collect(task))).toEqual([
+      "2 files changed: 0 added, 0 modified, 0 deleted, 2 renamed",
+      "a-old renamed to a-new (renamed, +3/-3)",
+      "b-old renamed to b-new (renamed, +0/-0)",
+    ])
+  })
+
+  test("keeps an added file whose patch can't be read, such as a path with a newline (review on PR #53)", () => {
+    const file = "notes\n2026.txt"
+    const diff = {
+      file,
+      patch: formatPatch(structuredPatch(file, file, "", "hello\n", "", "", { context: Number.MAX_SAFE_INTEGER })),
+      additions: 1,
+      deletions: 0,
+      status: "added" as const,
+    }
+    expect(format(collect([diff]))).toEqual([
+      "1 file changed: 1 added, 0 modified, 0 deleted",
+      `${file} (added, +1/-0)`,
+    ])
+    expect(format(collect([{ ...diff, patch: "@@ not a patch" }]))).toEqual([
+      "1 file changed: 1 added, 0 modified, 0 deleted",
+      `${file} (added, +1/-0)`,
+    ])
   })
 
   test("shows a clear message when nothing changed", () => {
