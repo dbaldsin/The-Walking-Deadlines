@@ -51,3 +51,7 @@ bun test --timeout 30000 test/permission/
 ```
 
 CI: the `unit` job in `.github/workflows/test.yml` runs these properties through `bun turbo test` (`opencode#test` is listed in `turbo.json`). That script uses `--only-failures`, so passing tests aren't printed; I added a `Run permission property tests` step that runs this file on its own so each property is listed by name in the log.
+
+## CI evidence
+
+The first passing PR run, in which all five properties ran, is the `unit` job's "Run permission property tests" step in [Actions run 44057195159](https://github.com/dbaldsin/The-Walking-Deadlines/actions/runs/44057195159/job/133949479503) (commit `fbaca6e`). That commit's push-triggered run failed only at gitleaks, because a branch's first push scans the full repository history (`--all`) rather than the new commits. The PR-triggered gitleaks scan of this branch's commits passed.
