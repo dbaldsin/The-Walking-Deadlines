@@ -44,11 +44,12 @@ function byPath(a: string | undefined, b: string | undefined) {
 
 /**
  * One row per file. The task diff runs git without rename detection, so a moved file arrives
- * as a deletion and an addition. Deleted and added text files are paired as renames when at
- * least half of the lines of the larger file are unchanged (git's default 50% rename threshold,
- * counted in lines). The most similar pairs are taken first, so exact moves are always matched
- * before edited ones, and ties go to the earlier paths. Files whose content can't be read from
- * the diff (binary files, older diffs, unreadable patches) are never paired.
+ * as a deletion and an addition. Exact moves are matched first, directly by content, taking
+ * ties in path order; this is cheap even when a whole folder is moved. Only the files left
+ * after that are compared line by line, and are paired as renames when at least half of the
+ * lines of the larger file are unchanged (git's default 50% rename threshold, counted in lines),
+ * most similar pairs first. Files whose content can't be read from the diff (binary files,
+ * older diffs, unreadable patches) are never paired.
  */
 function rows(files: ReadonlyArray<FileDiff.Info>) {
   const readable = (status: "added" | "deleted") =>
@@ -60,25 +61,38 @@ function rows(files: ReadonlyArray<FileDiff.Info>) {
         return text === undefined ? [] : [{ file, text }]
       })
   const added = readable("added")
-  const candidates = readable("deleted")
+  const deleted = readable("deleted")
+  const paired = new Set<FileDiff.Info>()
+  const byText = Map.groupBy(added, (to) => to.text)
+  const exact = deleted.flatMap((from) => {
+    const to = byText.get(from.text)?.find((candidate) => !paired.has(candidate.file))
+    if (!to) return []
+    paired.add(from.file)
+    paired.add(to.file)
+    return [{ from: from.file, to: to.file, additions: 0, deletions: 0 }]
+  })
+  const similar = deleted
+    .filter((from) => !paired.has(from.file))
     .flatMap((from, i) =>
-      added.map((to, j) => ({ from: from.file, to: to.file, order: [i, j], ...compare(from.text, to.text) })),
+      added
+        .filter((to) => !paired.has(to.file))
+        .map((to, j) => ({ from: from.file, to: to.file, order: [i, j], ...compare(from.text, to.text) })),
     )
     .filter((pair) => pair.similarity >= 0.5)
     .sort((a, b) => b.similarity - a.similarity || a.order[0] - b.order[0] || a.order[1] - b.order[1])
-  const paired = new Set<FileDiff.Info>()
-  const renames = candidates.flatMap((pair): Row[] => {
-    if (paired.has(pair.from) || paired.has(pair.to)) return []
-    paired.add(pair.from)
-    paired.add(pair.to)
-    return [
-      {
-        path: pair.to.file ?? "",
-        status: "renamed",
-        text: `${pair.from.file} renamed to ${pair.to.file} (renamed, +${pair.additions}/-${pair.deletions})`,
-      },
-    ]
-  })
+    .filter((pair) => {
+      if (paired.has(pair.from) || paired.has(pair.to)) return false
+      paired.add(pair.from)
+      paired.add(pair.to)
+      return true
+    })
+  const renames = [...exact, ...similar].map(
+    (pair): Row => ({
+      path: pair.to.file ?? "",
+      status: "renamed",
+      text: `${pair.from.file} renamed to ${pair.to.file} (renamed, +${pair.additions}/-${pair.deletions})`,
+    }),
+  )
   const others = files
     .filter((file) => !paired.has(file))
     .map((file): Row => {

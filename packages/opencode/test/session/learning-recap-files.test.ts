@@ -207,6 +207,43 @@ describe("format", () => {
     ])
   })
 
+  test("matches a folder of unchanged moves directly, without comparing every pair (review on PR #53)", () => {
+    const patch = (file: string, before: string, after: string) =>
+      formatPatch(structuredPatch(file, file, before, after, "", "", { context: Number.MAX_SAFE_INTEGER }))
+    const task = Array.from({ length: 30 }, (_, f) => {
+      const text = Array.from({ length: 300 }, (_, l) => `file${f}-line${l}\n`).join("")
+      const name = `f${String(f).padStart(2, "0")}.ts`
+      return [
+        {
+          file: `old/${name}`,
+          patch: patch(`old/${name}`, text, ""),
+          additions: 0,
+          deletions: 300,
+          status: "deleted" as const,
+        },
+        {
+          file: `new/${name}`,
+          patch: patch(`new/${name}`, "", text),
+          additions: 300,
+          deletions: 0,
+          status: "added" as const,
+        },
+      ]
+    }).flat()
+    const started = performance.now()
+    const lines = format(collect(task))
+    const elapsed = performance.now() - started
+    expect(lines[0]).toBe("30 files changed: 0 added, 0 modified, 0 deleted, 30 renamed")
+    expect(lines.slice(1)).toEqual(
+      Array.from({ length: 30 }, (_, f) => {
+        const name = `f${String(f).padStart(2, "0")}.ts`
+        return `old/${name} renamed to new/${name} (renamed, +0/-0)`
+      }),
+    )
+    // Comparing all 900 pairs line by line took about 10 seconds; direct matching takes milliseconds.
+    expect(elapsed).toBeLessThan(2000)
+  })
+
   test("keeps an added file whose patch can't be read, such as a path with a newline (review on PR #53)", () => {
     const file = "notes\n2026.txt"
     const diff = {
