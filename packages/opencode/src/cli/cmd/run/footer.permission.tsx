@@ -141,7 +141,7 @@ export function RunPermissionBody(props: {
   const info = createMemo(() => permissionInfo(props.request))
   const ft = createMemo(() => toolFiletype(info().file))
   const narrow = createMemo(() => footerWidthPolicy(dims().width).dialog.narrow)
-  const opts = createMemo(() => permissionOptions(state().stage))
+  const opts = createMemo(() => permissionOptions(state().stage, props.request.always.length > 0))
   const busy = createMemo(() => state().submitting)
   const title = createMemo(() => {
     if (state().stage === "always") {
@@ -165,7 +165,7 @@ export function RunPermissionBody(props: {
   })
 
   const shift = (dir: -1 | 1) => {
-    setState((prev) => permissionShift(prev, dir))
+    setState((prev) => permissionShift(prev, dir, props.request.always.length > 0))
   }
 
   const submit = async (next: PermissionReply) => {

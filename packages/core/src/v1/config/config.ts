@@ -126,6 +126,10 @@ export const Info = Schema.Struct({
   }),
   layout: Schema.optional(ConfigLayoutV1.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermissionV1.Info),
+  dangerous_commands: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
+    description:
+      'Shell command patterns that count as dangerous, on top of the built-in ones such as "rm -rf *" and "git reset --hard *". Set a pattern to true to add it or to false to remove it. A dangerous command never offers "Allow always" in the permission prompt.',
+  }),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({
     description: "Attachment processing configuration, including image size limits and resizing behavior",

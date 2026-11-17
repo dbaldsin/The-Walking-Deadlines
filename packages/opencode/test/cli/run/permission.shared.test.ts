@@ -6,8 +6,10 @@ import {
   permissionCancel,
   permissionEscape,
   permissionInfo,
+  permissionOptions,
   permissionReject,
   permissionRun,
+  permissionShift,
 } from "@/cli/cmd/run/permission.shared"
 
 function req(input: Partial<PermissionRequest> = {}): PermissionRequest {
@@ -30,6 +32,14 @@ describe("run permission shared", () => {
       requestID: "perm-1",
       reply: "once",
     })
+  })
+
+  test("offers allow always only when the request has something to approve always", () => {
+    expect(permissionOptions("permission")).toEqual(["once", "always", "reject"])
+    expect(permissionOptions("permission", false)).toEqual(["once", "reject"])
+    // Moving between options skips the missing "Allow always".
+    const state = { ...createPermissionBodyState("perm-1"), selected: "once" as const }
+    expect(permissionShift(state, 1, false).selected).toBe("reject")
   })
 
   test("requires confirmation for allow always", () => {

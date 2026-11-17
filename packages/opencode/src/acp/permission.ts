@@ -66,7 +66,11 @@ export class Handler {
           toolName: permission.permission,
           input: permission.metadata,
         }),
-        options: permissionOptions,
+        // A request with nothing to approve "always" (such as a dangerous command) offers no "Always allow".
+        options:
+          permission.always.length > 0
+            ? permissionOptions
+            : permissionOptions.filter((option) => option.optionId !== "always"),
       })
       .catch(async () => {
         await this.reply(permission.id, "reject", session.cwd)

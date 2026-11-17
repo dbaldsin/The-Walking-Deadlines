@@ -48,7 +48,14 @@ export const Approval = Schema.Struct({ projectID: Project.ID, patterns: Schema.
 })
 export type Approval = typeof Approval.Type
 
-export const AskInput = Schema.Struct({ ...Request.fields, id: Schema.optional(ID), ruleset: Ruleset }).annotate({
+export const AskInput = Schema.Struct({
+  ...Request.fields,
+  id: Schema.optional(ID),
+  ruleset: Ruleset,
+  // Must be answered every time, like a dangerous shell command: earlier
+  // "Allow always" answers never answer it. Configured rules still apply.
+  fresh: Schema.optional(Schema.Boolean),
+}).annotate({
   identifier: "PermissionAskInput",
 })
 export type AskInput = typeof AskInput.Type

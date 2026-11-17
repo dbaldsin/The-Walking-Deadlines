@@ -82,7 +82,8 @@ test("shows a pending permission dock", async ({ page }) => {
         permission: "bash",
         patterns: ["git status", "git diff"],
         metadata: {},
-        always: [],
+        // What the shell tool offers for these commands; with nothing to approve "always", the dock hides that button.
+        always: ["git status *", "git diff *"],
       },
     ],
   })

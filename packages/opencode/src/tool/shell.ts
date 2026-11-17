@@ -22,6 +22,7 @@ import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 import { Translator } from "@/translator"
+import { Danger } from "@/translator/danger"
 
 export { Parameters } from "./shell/prompt"
 
@@ -261,7 +262,13 @@ const parse = Effect.fn("ShellTool.parse")(function* (command: string, ps: boole
   return tree
 })
 
-const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan, input: { command: string; reason?: string }) {
+const ask = Effect.fn("ShellTool.ask")(function* (
+  ctx: Tool.Context,
+  scan: Scan,
+  input: { command: string; reason?: string },
+  dangerous: readonly string[],
+) {
+  const explanation = Translator.shell(input.command, input.reason, dangerous)
   if (scan.dirs.size > 0) {
     const directories = Array.from(scan.dirs)
     const globs = directories.map((dir) => {
@@ -276,7 +283,7 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
         command: input.command,
         directories,
         patterns: globs,
-        explanation: Translator.shell(input.command, input.reason),
+        explanation,
       },
     })
   }
@@ -285,10 +292,13 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
   yield* ctx.ask({
     permission: ShellID.ToolID,
     patterns: Array.from(scan.patterns),
-    always: Array.from(scan.always),
+    // A dangerous command offers nothing to approve "always", and no earlier
+    // "Allow always" answers it, so each run needs its own answer.
+    always: explanation?.danger ? [] : Array.from(scan.always),
+    fresh: explanation?.danger ? true : undefined,
     metadata: {
       command: input.command,
-      explanation: Translator.shell(input.command, input.reason),
+      explanation,
     },
   })
 })
@@ -627,7 +637,7 @@ export const ShellTool = Tool.define(
                   )
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
-                  yield* ask(ctx, scan, params)
+                  yield* ask(ctx, scan, params, Danger.list(cfg.dangerous_commands))
                 }),
               )
 
