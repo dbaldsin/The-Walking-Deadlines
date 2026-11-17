@@ -38,7 +38,12 @@ const HEADING = "## Learning Recap"
 export function render(info: LearningRecap.Info) {
   const sections: string[] = []
   if (info.changedFiles) {
-    sections.push(["### Files changed", ...LearningRecapFiles.format(info.changedFiles).map((line) => `- ${line}`)].join("\n"))
+    const lines = LearningRecapFiles.format(info.changedFiles)
+    // With files listed, the first line is the summary ("4 files changed: ..."), shown above the list.
+    const [summary, ...entries] = info.changedFiles.length ? lines : [undefined, ...lines]
+    sections.push(
+      ["### Files changed", ...(summary ? [summary] : []), ...entries.map((line) => `- ${line}`)].join("\n"),
+    )
   }
   if (info.tests) {
     sections.push(["### Tests", ...LearningRecapTests.format(info.tests).map((line) => `- ${line}`)].join("\n"))

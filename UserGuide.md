@@ -181,6 +181,8 @@ This prints the valid recap. Replace `passed` with `unknown` and repeat: validat
 
 **What it does:** the "Files changed" part of the Learning Recap lists every file opencode added, modified, or deleted during a task. The status comes from git, which compares a snapshot of the project before and after the task, so it is never guessed from line counts. This matters for edits that only add or only remove lines: a file that only gained lines is still listed as `modified`, not `added`. Each file is listed once with its final line counts, even if it was edited several times. If the task changed no files, the section says "No files were changed during this task."
 
+The list starts with a summary line such as `3 files changed: 1 added, 1 modified, 1 deleted`. The files are grouped by status (added, modified, deleted, renamed) and sorted by path inside each group, so the same changes always give the same recap whatever order the task made them in. A file the task moved is shown once, as `src/old.ts renamed to src/new.ts (renamed, +3/-1)`, when at least half of its lines are unchanged. If the content can't be compared (for example a binary file), a move is shown as a deletion of the old path and an addition of the new one.
+
 ### How to try it
 
 1. From the repository root, create a scratch folder with two files:
@@ -197,8 +199,9 @@ This prints the valid recap. Replace `passed` with `unknown` and repeat: validat
    ## Learning Recap
 
    ### Files changed
-   - recap-demo/grew.txt (modified, +1/-0)
+   3 files changed: 1 added, 1 modified, 1 deleted
    - recap-demo/new.txt (added, +1/-0)
+   - recap-demo/grew.txt (modified, +1/-0)
    - recap-demo/old.txt (deleted, +0/-1)
 
    ### Tests
@@ -216,7 +219,9 @@ This prints the valid recap. Replace `passed` with `unknown` and repeat: validat
   - never invents a status from line counts when the diff has none;
   - keeps only the latest diff when a file appears more than once, and drops entries with no path;
   - returns an empty list for a task with no changes, and `format` shows "No files were changed during this task.";
-  - checks that the collected files match the `LearningRecap.Info` schema from #7.
+  - checks that the collected files match the `LearningRecap.Info` schema from #7;
+  - checks the summary line, the grouping and sorting, and renames.
+- `packages/opencode/test/session/learning-recap-changed-files.property.test.ts` (Project 4B property-based tests with fast-check). Each property checks one requirement from [`traceability/snaimi.md`](traceability/snaimi.md) for hundreds of generated inputs. Most of them build real temporary git repositories and take real opencode snapshots before, during and after a generated task, then check the recap that `Snapshot.diffFull` and `collect` produce. The CI `unit` job runs this file in its own step, so each property shows in the log.
 - `packages/opencode/test/session/prompt.test.ts`, tests named `learning recap lists added, modified, and deleted files with the status git reports` and `learning recap says no files changed when a task only runs tests`. These run a whole task end to end: a scripted model makes real edits in a temporary git repository, opencode takes real snapshots, and the tests check the recap text in the final response. This covers the full path from git (`Snapshot.diffFull`) through `collect` to the rendered recap.
 
 **Why these tests are enough:** the unit tests cover every branch of `collect` and `format`, including the one-sided-edit case that caused a bug in the first version (#25 review). The end-to-end tests check each acceptance criterion of #8 against real files and real git: changed files are listed, added, modified, and deleted are labeled correctly, and a task with no file changes shows the clear empty message. If the status were guessed from line counts again, the end-to-end test fails, because it would show `grew.txt` as `added`.
@@ -225,6 +230,7 @@ Run them from `packages/opencode`:
 
 ```sh
 bun test test/session/learning-recap-files.test.ts
+bun test test/session/learning-recap-changed-files.property.test.ts
 bun test test/session/prompt.test.ts -t "learning recap"
 ```
 
