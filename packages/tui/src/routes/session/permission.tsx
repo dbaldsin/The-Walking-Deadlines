@@ -139,7 +139,20 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
     const what = "what" in value && typeof value.what === "string" ? value.what : undefined
     const why = "why" in value && typeof value.why === "string" ? value.why : undefined
     if (!what && !why) return undefined
-    return { what, why }
+    const flags = "flags" in value && Array.isArray(value.flags) ? value.flags.filter(isFlag) : []
+    const docs =
+      "docs" in value && Array.isArray(value.docs)
+        ? value.docs.filter((item): item is string => typeof item === "string")
+        : []
+    const danger =
+      "danger" in value &&
+      value.danger &&
+      typeof value.danger === "object" &&
+      "pattern" in value.danger &&
+      typeof value.danger.pattern === "string"
+        ? value.danger.pattern
+        : undefined
+    return { what, why, flags, docs, danger }
   })
 
   const { theme } = useTheme()
@@ -421,15 +434,48 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                   </text>
                 </box>
               </Show>
+              <For each={explanation()?.flags ?? []}>
+                {(item) => (
+                  <box paddingLeft={4} flexShrink={0}>
+                    <text fg={theme.text} wrapMode="word">
+                      <span style={{ fg: theme.textMuted }}>{item.flag}: </span>
+                      {item.meaning}
+                    </text>
+                  </box>
+                )}
+              </For>
+              <Show when={explanation()?.docs.length}>
+                <box paddingLeft={4} flexShrink={0}>
+                  <text fg={theme.text} wrapMode="word">
+                    <span style={{ fg: theme.textMuted }}>Docs: </span>
+                    {explanation()?.docs.join("  ")}
+                  </text>
+                </box>
+              </Show>
+              <Show when={explanation()?.danger}>
+                {(pattern) => (
+                  <box paddingLeft={4} flexShrink={0}>
+                    <text fg={theme.error} wrapMode="word">
+                      {`Dangerous: matches "${pattern()}" on your dangerous-command list, so it can only be allowed once`}
+                    </text>
+                  </box>
+                )}
+              </Show>
             </box>
           )
+
+          // A request with nothing to approve "always" (such as a dangerous command) offers no "Allow always".
+          const options: Record<string, string> =
+            props.request.always.length > 0
+              ? { once: "Allow once", always: "Allow always", reject: "Reject" }
+              : { once: "Allow once", reject: "Reject" }
 
           const body = (
             <Prompt
               title="Permission required"
               header={header()}
               body={current.body}
-              options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
+              options={options}
               escapeKey="reject"
               fullscreen
               onSelect={(option) => {
@@ -464,6 +510,17 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
         })()}
       </Match>
     </Switch>
+  )
+}
+
+function isFlag(item: unknown): item is { flag: string; meaning: string } {
+  return (
+    !!item &&
+    typeof item === "object" &&
+    "flag" in item &&
+    typeof item.flag === "string" &&
+    "meaning" in item &&
+    typeof item.meaning === "string"
   )
 }
 
