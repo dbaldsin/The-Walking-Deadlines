@@ -2,6 +2,10 @@
 // (src/permission/index.ts). Each property is traced to a requirement in
 // traceability/radbah.md. Properties drafted with AI assistance (Claude Code)
 // and reviewed against the P4A interview notes; see the traceability table.
+//
+// To replay a failure, copy the `seed` and `path` fast-check prints into
+// `options` (e.g. `{ numRuns: 100, seed: 628441742, path: "3:1:0:1:3" }`),
+// rerun the single test with `-t "R5"`, then remove them once fixed.
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { expect } from "bun:test"
 import fc from "fast-check"
