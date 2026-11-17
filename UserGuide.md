@@ -377,15 +377,22 @@ When opencode asks permission to run a shell command, edit a file, or create a f
 
 - **What:** what the action will actually do, for example "Permanently deletes build and everything inside it". opencode works this out from the command or diff itself, not from the model, so the model can't misdescribe a dangerous action.
 - **Why:** one short sentence from the model explaining why it needs to do this. The model supplies it through a new optional `reason` parameter on the shell, edit, and write tools. If the model leaves it out, only **What** is shown.
+- **Flags** (shell commands): what each flag does, one line per flag. Combined flags such as `-rf` are explained one by one, and a flag opencode doesn't know is still listed, as "not explained here; check the documentation link".
+- **Docs** (shell commands): a link to the official documentation of each program the command runs, on the program's own site (git-scm.com, docs.npmjs.com, gnu.org, …). A program opencode doesn't know gets no link rather than a guessed one.
+- **Dangerous** (shell commands): a warning when the command matches the dangerous-command list (see [Dangerous commands](#dangerous-commands)).
 
-The choices are **Allow once / Allow always / Reject**
+The choices are **Allow once / Allow always / Reject**, or only **Allow once / Reject** for a dangerous command.
 
 ```text
 What: Permanently deletes build and everything inside it, then creates the folder build
 Why:  Start from a clean build folder before compiling
+-r: deletes folders and everything inside them
+-f: deletes without asking, even write-protected files, and ignores missing ones
+Docs: https://www.gnu.org/software/coreutils/manual/html_node/rm-invocation.html  https://www.gnu.org/software/coreutils/manual/html_node/mkdir-invocation.html
+Dangerous: matches "rm -rf *" on your dangerous-command list, so it can only be allowed once
 ```
 
-In the web and desktop app, the same text appears in the permission panel as **What this does:** and **Why:**, translated into all 61 supported languages.
+In the web and desktop app, the same **What** and **Why** appear in the permission panel as **What this does:** and **Why:**, translated into all 61 supported languages, and dangerous commands offer no **Allow always**. The **Flags**, **Docs** and **Dangerous** lines are shown in the terminal for now.
 
 ### What it explains
 
@@ -405,6 +412,33 @@ In the web and desktop app, the same text appears in the permission panel as **W
 - **Redirections that don't change files**, such as `2>&1` or `> /dev/null`, are left out of the description.
 - **Commands too complex to summarize safely**, such as command substitution (`$(…)`, backticks), heredocs (`<<`), subshells, or an unmatched quote, show a warning instead: "Runs a shell command that is too complex to summarize safely. Review the full command before allowing it". These can hide side effects, so opencode doesn't guess.
 
+### Dangerous commands
+
+Some commands are hard or impossible to undo. opencode decides which ones from a fixed list of patterns, never from what the model says about the command, so calling `rm -rf src` "harmless cleanup" changes nothing. The built-in list is:
+
+```text
+rm -rf *    rm -r *    git reset --hard *    git push --force *    git push --force-with-lease *    git clean -f *    find * -delete
+```
+
+A command is dangerous when any part of it matches a pattern, including steps chained with `&&`, `;`, `|` or `||`, commands run through `sudo`, `env`, `time` or `nohup`, and commands wrapped in `sh -c`, `bash -c`, `eval`, a subshell or `$(…)`. Flags match however they are written: `rm -rf *` also catches `rm -fr src`, `rm -r -f src` and `rm --recursive --force src`. Commands hidden inside a script or a variable can't be seen.
+
+A dangerous command:
+
+- shows the **Dangerous** warning in the prompt;
+- offers only **Allow once** and **Reject**, never **Allow always**;
+- asks again every time it runs. An earlier **Allow always** never covers it, even one for a similar command: allowing `rm build.log` always approves `rm *`, but `rm -rf build` still asks.
+
+Rules you write in `opencode.json` still apply. With `"bash": "allow"`, which is opencode's default, nothing is asked at all.
+
+To change the list, add `dangerous_commands` to `opencode.json`. `true` adds a pattern and `false` removes one:
+
+```json
+{
+  "permission": { "bash": "ask" },
+  "dangerous_commands": { "docker system prune *": true, "git clean -f *": false }
+}
+```
+
 ### How to try it
 
 opencode allows every tool without asking by default, so first turn the prompts on.
@@ -419,7 +453,7 @@ opencode allows every tool without asking by default, so first turn the prompts 
    (`/tmp` is cleared when the dev container restarts. To get prompts in every folder, put the same `permission` line in `~/.config/opencode/opencode.jsonc` instead.)
 2. From the repository root, start opencode in that folder: `bun dev /tmp/perm-test`.
 3. Ask: _"Run `git status`."_ The prompt shows **What: Shows which files have changed** plus the model's **Why**. Choose **Allow once**.
-4. Ask: _"Run `rm -rf build && mkdir build`."_ **What** describes both steps and warns that the delete is permanent. Choose **Reject**; nothing runs.
+4. Ask: _"Run `rm -rf build && mkdir build`."_ **What** describes both steps and warns that the delete is permanent; the `-r` and `-f` lines explain the flags, **Docs** links to the GNU manual, and the **Dangerous** line appears. Only **Allow once** and **Reject** are offered. Choose **Allow once**, then ask for the same command again: it asks again. Choose **Reject**; nothing runs.
 5. Ask: _"Run `ls > files.txt`."_ **What** says the output is written to `files.txt`, creating or overwriting it.
 6. Ask: _"Run `echo $(whoami)`."_ **What** shows the "too complex to summarize safely" warning.
 7. Ask: _"Create `notes.txt` with the lines `one` and `two`."_ **What: Creates the new file notes.txt (2 lines)**. Allow it, then ask _"Change `two` to `three` in `notes.txt`."_ **What: Edits notes.txt (adds 1 line, removes 1 line)**.
@@ -431,7 +465,9 @@ From `packages/opencode`:
 
 ```sh
 bun test test/translator/index.test.ts
+bun test --timeout 120000 test/explanation/explanation.property.test.ts
 bun test test/tool/shell.test.ts -t "explains the command in plain language"
+bun test test/tool/shell.test.ts -t "asks for dangerous commands every time"
 bun test test/tool/edit.test.ts -t "explains the edit in the permission request"
 bun test test/tool/write.test.ts -t "explains the write in the permission request"
 bun test test/tool/parameters.test.ts
@@ -445,8 +481,9 @@ bun test src/i18n/parity.test.ts
 
 | Test file | What it covers |
 | --- | --- |
-| `packages/opencode/test/translator/index.test.ts` | The explanation text itself (14 tests): quoted commit messages kept intact, package installs, recursive-delete and history-rewriting warnings, chained commands, redirections that do or don't write files (`>`, `>>`, `2>`, `&>`, `tee`, `/dev/null`), the safe fallback for substitutions, heredocs, subshells, and broken quoting, `sudo`, unknown programs, passing through the model's reason, empty commands, and edit/write line counts. |
-| `test/tool/shell.test.ts`, `edit.test.ts`, `write.test.ts` | **End to end through the real tools.** Each runs the actual tool and checks that the permission request it sends carries the expected `explanation` with both **What** and **Why**. |
+| `packages/opencode/test/translator/index.test.ts` | The explanation text itself (18 tests): quoted commit messages kept intact, package installs, recursive-delete and history-rewriting warnings, chained commands, redirections that do or don't write files (`>`, `>>`, `2>`, `&>`, `tee`, `/dev/null`), the safe fallback for substitutions, heredocs, subshells, and broken quoting, `sudo`, unknown programs, passing through the model's reason, empty commands, edit/write line counts, and one example per acceptance criterion for named packages and branches, flags, documentation links and dangerous commands. |
+| `packages/opencode/test/explanation/explanation.property.test.ts` | **Property-based tests** (fast-check) for the requirements in [`traceability/jtthani.md`](traceability/jtthani.md): the prompt explains a command before it runs and a rejected command never runs (R1), targets and flags are explained however they are written (R2), the dangerous-command list catches commands however they are written and can be edited (R4), dangerous commands ask on every run (R6, through the real permission service), and documentation links only go to official sites (R7). |
+| `test/tool/shell.test.ts`, `edit.test.ts`, `write.test.ts` | **End to end through the real tools.** Each runs the actual tool and checks that the permission request it sends carries the expected `explanation` with both **What** and **Why**, and that dangerous commands, including one added in `opencode.json`, are asked with no **Allow always**. |
 | `test/tool/parameters.test.ts` | Snapshot of each tool's parameters, confirming the new optional `reason` parameter appears as expected on shell, edit, and write. |
 | `packages/app/src/i18n/parity.test.ts` | The new **What this does:** / **Why:** labels exist in every one of the 61 languages. |
 
