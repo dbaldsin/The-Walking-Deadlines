@@ -78,6 +78,12 @@ jobs:
         working-directory: packages/opencode
         run: bun test --timeout 60000 test/permission/permission.property.test.ts
 
+      # Same for the plain-language explanation properties (traceability/jtthani.md).
+      - name: Run explanation property tests
+        timeout-minutes: 5
+        working-directory: packages/opencode
+        run: bun test --timeout 120000 test/explanation/explanation.property.test.ts
+
       - name: Check generated client
         timeout-minutes: 5
         working-directory: packages/client
