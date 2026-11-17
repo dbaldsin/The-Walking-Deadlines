@@ -804,6 +804,43 @@ it.instance(
   { git: true },
 )
 
+// Regression for the counterexample fast-check found for R5 in
+// permission.property.test.ts: an "always" approval used to override a
+// configured deny.
+it.instance(
+  "reply - always approval does not override a configured deny",
+  () =>
+    Effect.gen(function* () {
+      const ruleset = [{ permission: "bash", pattern: "ls", action: "deny" as const }]
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_test_deny_wins"),
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["bun install"],
+        metadata: {},
+        always: ["*"],
+        ruleset,
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_test_deny_wins"), reply: "always" })
+      yield* Fiber.join(fiber)
+
+      const err = yield* fail(
+        ask({
+          sessionID: SessionID.make("session_test"),
+          permission: "bash",
+          patterns: ["ls"],
+          metadata: {},
+          always: [],
+          ruleset,
+        }),
+      )
+      expect(err).toBeInstanceOf(PermissionV1.DeniedError)
+    }),
+  { git: true },
+)
+
 it.instance(
   "reply - reject cancels all pending for same session",
   () =>

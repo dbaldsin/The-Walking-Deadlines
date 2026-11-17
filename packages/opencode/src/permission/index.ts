@@ -70,7 +70,11 @@ const layer = Layer.effect(
       let needsAsk = false
 
       for (const pattern of request.patterns) {
-        const rule = evaluate(request.permission, pattern, ruleset, approved)
+        // A configured deny is the user's explicit decision. A standing "always" approval, given in
+        // answer to a prompt about some other command, must never widen past it.
+        const configured = evaluate(request.permission, pattern, ruleset)
+        const rule =
+          configured.action === "deny" ? configured : evaluate(request.permission, pattern, ruleset, approved)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new PermissionV1.DeniedError({
