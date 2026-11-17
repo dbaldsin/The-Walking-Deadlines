@@ -70,6 +70,14 @@ jobs:
         # vCPUs across 5 packages' test tasks running at once — see typecheck.
         run: GITHUB_ACTIONS=false bun turbo test --concurrency=4
 
+      # The opencode test script uses --only-failures, so passing properties
+      # do not appear in the log above. Run the permission properties on their
+      # own so each one is listed by name (traceability/radbah.md).
+      - name: Run permission property tests
+        timeout-minutes: 5
+        working-directory: packages/opencode
+        run: bun test --timeout 60000 test/permission/permission.property.test.ts
+
       - name: Check generated client
         timeout-minutes: 5
         working-directory: packages/client
