@@ -77,9 +77,11 @@ export function createPermissionBodyState(requestID: string): PermissionBodyStat
   }
 }
 
-export function permissionOptions(stage: PermissionStage): PermissionOption[] {
+// `always` is false when the request offers nothing to approve "always" (such
+// as a dangerous command), so "Allow always" is not offered.
+export function permissionOptions(stage: PermissionStage, always = true): PermissionOption[] {
   if (stage === "permission") {
-    return ["once", "always", "reject"]
+    return always ? ["once", "always", "reject"] : ["once", "reject"]
   }
 
   if (stage === "always") {
@@ -150,8 +152,8 @@ export function permissionReply(requestID: string, reply: PermissionReply["reply
   }
 }
 
-export function permissionShift(state: PermissionBodyState, dir: -1 | 1): PermissionBodyState {
-  const list = permissionOptions(state.stage)
+export function permissionShift(state: PermissionBodyState, dir: -1 | 1, always = true): PermissionBodyState {
+  const list = permissionOptions(state.stage, always)
   if (list.length === 0) {
     return state
   }

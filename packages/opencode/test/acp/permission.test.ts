@@ -105,6 +105,7 @@ function permissionAsked(
     permission?: string
     metadata?: Record<string, unknown>
     tool?: { messageID: string; callID: string }
+    always?: string[]
   } = {},
 ) {
   return {
@@ -116,7 +117,7 @@ function permissionAsked(
       permission: input.permission ?? "bash",
       patterns: ["*"],
       metadata: input.metadata ?? { command: "printf hello" },
-      always: [],
+      always: input.always ?? ["*"],
       ...(input.tool ? { tool: input.tool } : {}),
     },
   } as PermissionEvent
@@ -181,6 +182,23 @@ describe("acp permissions", () => {
       ],
     })
     expect(harness.replies).toEqual([{ requestID: "perm_1", reply: "once", directory: "/workspace" }])
+  })
+
+  it("offers no always option when the request has nothing to approve always", async () => {
+    const harness = createHarness()
+    await createSession(harness.session, "ses_a")
+
+    // A dangerous shell command is asked with no "always" patterns.
+    harness.subscription.handle(
+      permissionAsked("ses_a", "perm_danger", { metadata: { command: "rm -rf build/" }, always: [] }),
+    )
+
+    await pollUntil(() => harness.replies.length === 1, "permission was never replied")
+
+    expect(harness.requests[0]?.options).toEqual([
+      { optionId: "once", kind: "allow_once", name: "Allow once" },
+      { optionId: "reject", kind: "reject_once", name: "Reject" },
+    ])
   })
 
   it("uses permission metadata for non-shell titles", async () => {
