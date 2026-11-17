@@ -1,12 +1,23 @@
 // Plain-language explanations for permission requests.
 //
-// `what` is derived deterministically from the command or diff so the model
-// cannot misdescribe the action; `why` is the model-supplied `reason` tool
-// parameter. Both are shown to the user in the permission prompt.
+// `what`, `flags`, `docs` and `danger` are derived deterministically from the
+// command or diff, so the model cannot misdescribe the action or talk a
+// dangerous command out of being flagged; `why` is the model-supplied `reason`
+// tool parameter. All of them are shown to the user in the permission prompt.
+
+import { Danger } from "./danger"
+import { Docs } from "./docs"
+import { Flags } from "./flags"
 
 export type Explanation = {
   what: string
   why?: string
+  // What each flag of each step does.
+  flags?: Flags.Flag[]
+  // The official documentation of each program the command runs.
+  docs?: string[]
+  // The dangerous-command pattern the command matched, if any.
+  danger?: Danger.Match
 }
 
 type Redirect = {
@@ -38,15 +49,37 @@ const SINKS = ["/dev/null", "/dev/stdout", "/dev/stderr"]
 
 const UNSUMMARIZED = "Runs a shell command that is too complex to summarize safely. Review the full command before allowing it"
 
-export function shell(command: string, reason?: string): Explanation | undefined {
+// `NAME=value` words before a command set environment variables for it.
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
+
+export function shell(
+  command: string,
+  reason?: string,
+  dangerous: readonly string[] = Danger.DEFAULTS,
+): Explanation | undefined {
+  const danger = Danger.match(command, dangerous)
   const parsed = parse(command)
-  if (!parsed) return { what: UNSUMMARIZED, why: why(reason) }
+  if (!parsed) return { what: UNSUMMARIZED, why: why(reason), danger }
   const steps = parsed.map(summarize).filter((item) => item.length > 0)
   if (steps.length === 0) return undefined
   const shown = steps.slice(0, MAX_STEPS).map((item, index) => (index === 0 ? item : lower(item)))
   const rest = steps.length - shown.length
   const what = shown.join(", then ") + (rest > 0 ? `, and ${rest} more ${rest === 1 ? "step" : "steps"}` : "")
-  return { what, why: why(reason) }
+  const commands = parsed.map((item) => own(item.words)).filter((words) => words.length > 0)
+  const flags = commands
+    .flatMap(Flags.explain)
+    .filter(
+      (item, index, all) =>
+        all.findIndex((other) => other.flag === item.flag && other.meaning === item.meaning) === index,
+    )
+  const docs = [...new Set(commands.flatMap((words) => Docs.link(words) ?? []))]
+  return {
+    what,
+    why: why(reason),
+    flags: flags.length > 0 ? flags : undefined,
+    docs: docs.length > 0 ? docs : undefined,
+    danger,
+  }
 }
 
 export function edit(filepath: string, diff: string, reason?: string): Explanation {
@@ -117,8 +150,20 @@ function summarize(item: Step) {
   return `${action} and ${effects.join(" and ")}`
 }
 
+// The words of the command a step runs, without `NAME=value` assignments and
+// without `sudo` and its options.
+function own(input: string[]): string[] {
+  const start = input.findIndex((word) => !ASSIGNMENT.test(word))
+  if (start === -1) return []
+  const words = input.slice(start)
+  if (words[0] !== "sudo") return words
+  const rest = words.slice(1)
+  const next = rest.findIndex((word) => !word.startsWith("-"))
+  return next === -1 ? [] : own(rest.slice(next))
+}
+
 function describe(input: string[]): string {
-  const start = input.findIndex((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
+  const start = input.findIndex((word) => !ASSIGNMENT.test(word))
   if (start === -1) return ""
   const words = input.slice(start)
   if (words[0] === "sudo") {
@@ -173,6 +218,8 @@ function git(words: string[]) {
   const args = words.slice(1).filter((word) => !word.startsWith("-"))
   const has = (...names: string[]) => flags.some((flag) => names.includes(flag))
   const remote = args[0] ?? "the remote repository"
+  // `git push origin main` names the branch as well as the remote.
+  const branch = args.length > 1 ? `the branch ${args.slice(1).join(" ")}` : undefined
 
   if (!sub) return "Runs git"
   if (sub === "status") return "Shows which files have changed"
@@ -191,12 +238,13 @@ function git(words: string[]) {
   }
   if (sub === "push") {
     if (has("-f", "--force", "--force-with-lease")) {
-      return `Force-uploads your commits to ${remote}, overwriting its history (others may lose work)`
+      return `Force-uploads ${branch ?? "your commits"} to ${remote}, overwriting its history (others may lose work)`
     }
-    return `Uploads your commits to ${remote}`
+    return `Uploads ${branch ?? "your commits"} to ${remote}`
   }
-  if (sub === "pull") return `Downloads the latest changes from ${remote} and merges them into your branch`
-  if (sub === "fetch") return `Downloads the latest changes from ${remote} without changing your files`
+  const from = branch ? `${branch} on ${remote}` : remote
+  if (sub === "pull") return `Downloads the latest changes from ${from} and merges them into your branch`
+  if (sub === "fetch") return `Downloads the latest changes from ${from} without changing your files`
   if (sub === "clone") return `Downloads a copy of the repository ${args[0] ?? ""}`.trim()
   if (sub === "checkout" || sub === "switch") {
     if (words.includes("--")) return `Discards your uncommitted changes to ${words.slice(words.indexOf("--") + 1).join(" ")}`

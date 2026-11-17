@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Translator } from "../../src/translator"
+import { Danger } from "../../src/translator/danger"
+import { Flags } from "../../src/translator/flags"
 
 describe("Translator.shell", () => {
   test("keeps quoted commit messages intact", () => {
@@ -89,8 +91,61 @@ describe("Translator.shell", () => {
     expect(Translator.shell("git status", "  Check what changed before committing ")).toEqual({
       what: "Shows which files have changed",
       why: "Check what changed before committing",
+      docs: ["https://git-scm.com/docs/git-status"],
     })
     expect(Translator.shell("git status", "   ")?.why).toBeUndefined()
+  })
+
+  test("names the package or branch each command acts on", () => {
+    expect(Translator.shell("npm install express")?.what).toBe("Installs the package express")
+    expect(Translator.shell("npm install lodash")?.what).toBe("Installs the package lodash")
+    expect(Translator.shell("git push origin main")?.what).toBe("Uploads the branch main to origin")
+    expect(Translator.shell("git push")?.what).toBe("Uploads your commits to the remote repository")
+    expect(Translator.shell("git pull origin main")?.what).toBe(
+      "Downloads the latest changes from the branch main on origin and merges them into your branch",
+    )
+    expect(Translator.shell("git fetch origin")?.what).toBe(
+      "Downloads the latest changes from origin without changing your files",
+    )
+  })
+
+  test("explains each flag, one by one", () => {
+    expect(Translator.shell("rm -rf build/")?.flags).toEqual([
+      { flag: "-r", meaning: "deletes folders and everything inside them" },
+      { flag: "-f", meaning: "deletes without asking, even write-protected files, and ignores missing ones" },
+    ])
+    expect(Translator.shell("rm build.log")?.flags).toBeUndefined()
+    expect(Translator.shell("sudo rm --recursive /opt/app")?.flags).toEqual([
+      { flag: "--recursive", meaning: "deletes folders and everything inside them" },
+    ])
+    expect(Translator.shell("./deploy.sh --prod")?.flags).toEqual([{ flag: "--prod", meaning: Flags.UNEXPLAINED }])
+    expect(Translator.shell("rm -rf dist && npm install -D vitest")?.flags?.map((item) => item.flag)).toEqual([
+      "-r",
+      "-f",
+      "-D",
+    ])
+  })
+
+  test("links to official documentation only for programs it knows", () => {
+    expect(Translator.shell("git reset --hard HEAD~1")?.docs).toEqual(["https://git-scm.com/docs/git-reset"])
+    expect(Translator.shell("npm install express")?.docs).toEqual(["https://docs.npmjs.com/cli/commands/npm-install"])
+    expect(Translator.shell("NODE_ENV=test bun test && bun test")?.docs).toEqual(["https://bun.com/docs"])
+    expect(Translator.shell("./deploy.sh --prod")?.docs).toBeUndefined()
+    expect(Translator.shell("echo $(ls)")?.docs).toBeUndefined()
+  })
+
+  test("flags dangerous commands from the list, whatever the agent says", () => {
+    expect(Translator.shell("rm -rf src/", "harmless cleanup")?.danger).toEqual({ pattern: "rm -rf *" })
+    expect(Translator.shell("git reset --hard HEAD~1")?.danger).toEqual({ pattern: "git reset --hard *" })
+    expect(Translator.shell("echo $(rm -rf dist)")?.danger).toEqual({ pattern: "rm -rf *" })
+    expect(Translator.shell("ls -la")?.danger).toBeUndefined()
+    expect(Translator.shell("docker system prune -a")?.danger).toBeUndefined()
+    expect(
+      Translator.shell("docker system prune -a", undefined, Danger.list({ "docker system prune *": true }))?.danger,
+    ).toEqual({ pattern: "docker system prune *" })
+    expect(
+      Translator.shell("rm -rf src/", undefined, Danger.list({ "rm -rf *": false, "rm -r *": false }))?.danger,
+    ).toBeUndefined()
   })
 
   test("returns undefined for empty commands", () => {

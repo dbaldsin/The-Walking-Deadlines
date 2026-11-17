@@ -161,9 +161,9 @@ const each = (
   }
 }
 
-const capture = (requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">>, stop?: Error) => ({
+const capture = (requests: Array<Parameters<Tool.Context["ask"]>[0]>, stop?: Error) => ({
   ...ctx,
-  ask: (req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) =>
+  ask: (req: Parameters<Tool.Context["ask"]>[0]) =>
     Effect.sync(() => {
       requests.push(req)
       if (stop) throw stop
@@ -258,7 +258,38 @@ describe("tool.shell permissions", () => {
           expect(requests[0].metadata.explanation).toEqual({
             what: "Prints text",
             why: "Check that the shell works",
+            docs: ["https://www.gnu.org/software/coreutils/manual/html_node/echo-invocation.html"],
           })
+        }),
+      )
+    }),
+  )
+
+  each("asks for dangerous commands every time, without Allow always", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ config: { dangerous_commands: { "docker system prune *": true } } })
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          // Stop at the prompt, so nothing actually runs.
+          const err = new Error("stop after permission")
+          const ask = (command: string) =>
+            Effect.gen(function* () {
+              const requests: Parameters<Tool.Context["ask"]>[0][] = []
+              yield* fail({ command }, capture(requests, err))
+              return requests.find((req) => req.permission === "bash")
+            })
+          const rm = yield* ask("rm -rf build/")
+          expect(rm?.always).toEqual([])
+          expect(rm?.fresh).toBe(true)
+          expect(rm?.metadata.explanation).toMatchObject({ danger: { pattern: "rm -rf *" } })
+          // A pattern added in opencode.json is dangerous too.
+          const prune = yield* ask("docker system prune -a")
+          expect(prune?.always).toEqual([])
+          expect(prune?.metadata.explanation).toMatchObject({ danger: { pattern: "docker system prune *" } })
+          const ls = yield* ask("ls -la")
+          expect(ls?.always).toEqual(["ls *"])
+          expect(ls?.fresh).toBeUndefined()
         }),
       )
     }),

@@ -18,6 +18,8 @@ export interface Interface {
 interface PendingEntry {
   info: PermissionV1.Request
   deferred: Deferred.Deferred<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>
+  // Only its own reply answers it (see `PermissionV1.AskInput.fresh`).
+  fresh: boolean
 }
 
 interface State {
@@ -66,15 +68,16 @@ const layer = Layer.effect(
 
     const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
-      const { ruleset, ...request } = input
+      const { ruleset, fresh, ...request } = input
       let needsAsk = false
 
       for (const pattern of request.patterns) {
         // A configured deny is the user's explicit decision. A standing "always" approval, given in
-        // answer to a prompt about some other command, must never widen past it.
+        // answer to a prompt about some other command, must never widen past it, and never answers
+        // a request that must be answered every time.
         const configured = evaluate(request.permission, pattern, ruleset)
         const rule =
-          configured.action === "deny" ? configured : evaluate(request.permission, pattern, ruleset, approved)
+          configured.action === "deny" || fresh ? configured : evaluate(request.permission, pattern, ruleset, approved)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new PermissionV1.DeniedError({
@@ -100,7 +103,7 @@ const layer = Layer.effect(
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
 
       const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
-      pending.set(id, { info, deferred })
+      pending.set(id, { info, deferred, fresh: fresh === true })
       yield* events.publish(Event.Asked, info)
       return yield* Effect.ensuring(
         Deferred.await(deferred),
@@ -144,7 +147,8 @@ const layer = Layer.effect(
       }
 
       yield* Deferred.succeed(existing.deferred, undefined)
-      if (input.reply === "once") return
+      // "Allow always" on a request that must be answered every time counts as "Allow once".
+      if (input.reply === "once" || existing.fresh) return
 
       for (const pattern of existing.info.always) {
         approved.push({
@@ -155,7 +159,7 @@ const layer = Layer.effect(
       }
 
       for (const [id, item] of pending.entries()) {
-        if (item.info.sessionID !== existing.info.sessionID) continue
+        if (item.info.sessionID !== existing.info.sessionID || item.fresh) continue
         const ok = item.info.patterns.every(
           (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
         )
